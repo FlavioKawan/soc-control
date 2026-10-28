@@ -11,7 +11,7 @@ from django.utils import timezone
 from catalog.models import ClientLogSource, ClientUseCase, LogSource, UseCase
 from clients.models import Client
 from taxonomy.choices import StatusCategory, StatusScope
-from taxonomy.models import Severity, Status, Technology
+from taxonomy.models import Framework, FrameworkControl, Severity, Status, Technology
 
 from .forms import RuleForm
 from .models import DEFAULT_RULE_COLUMNS, Rule, RuleColumnPreference
@@ -315,6 +315,48 @@ class RuleFilterTests(TestCase):
         response = self.client.get(reverse("detections:rule_list"), {"review_status": "overdue"})
         rules = list(response.context["rules"])
         self.assertEqual(rules, [self.rule_a])
+
+
+class StageFilterTests(TestCase):
+    """?stage=<FrameworkControl id> (Dashboard's layer widget) must match
+    a rule tagged on the control itself, or on any descendant (e.g. a rule
+    tagged with a MITRE ATT&CK technique when ?stage= is its tactic)."""
+
+    def setUp(self):
+        self.user = User.objects.create_superuser("admin10", "admin10@example.com", "x")
+        self.client.force_login(self.user)
+        self.client_obj = Client.objects.create(name="Acme Corp")
+        self.technology = Technology.objects.create(name="Wazuh")
+        self.framework = Framework.objects.create(name="MITRE ATT&CK")
+
+    def _rule(self, internal_id):
+        return Rule.objects.create(
+            internal_id=internal_id, name=internal_id, client=self.client_obj, technology=self.technology
+        )
+
+    def test_stage_matches_rules_tagged_on_the_control_itself(self):
+        stage = FrameworkControl.objects.create(framework=self.framework, code="KC1", name="Reconhecimento")
+        rule = self._rule("SOC-001")
+        rule.framework_controls.add(stage)
+
+        response = self.client.get(reverse("detections:rule_list"), {"stage": stage.pk})
+        self.assertEqual(list(response.context["rules"]), [rule])
+
+    def test_stage_matches_rules_tagged_on_a_descendant_control(self):
+        tactic = FrameworkControl.objects.create(framework=self.framework, code="TA06", name="Credential Access")
+        technique = FrameworkControl.objects.create(
+            framework=self.framework, code="T1110", name="Brute Force", parent=tactic
+        )
+        rule = self._rule("SOC-001")
+        rule.framework_controls.add(technique)
+
+        response = self.client.get(reverse("detections:rule_list"), {"stage": tactic.pk})
+        self.assertEqual(list(response.context["rules"]), [rule])
+
+    def test_unknown_stage_id_returns_no_rules_instead_of_everything(self):
+        self._rule("SOC-001")
+        response = self.client.get(reverse("detections:rule_list"), {"stage": 999999})
+        self.assertEqual(list(response.context["rules"]), [])
 
 
 class MalformedQueryParamTests(TestCase):

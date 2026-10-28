@@ -93,28 +93,41 @@
     </div>
 </div>
 
-{% if kill_chain %}
 <div class="card mb-4">
     <div class="card-body">
-        <h5 class="mb-1"><i class="bi bi-diagram-3" style="color: var(--scv-accent);"></i> Cyber Kill Chain</h5>
-        <p class="text-muted small mb-3">Quantas regras (do filtro atual) cobrem cada etapa de um ataque. Clique numa etapa para ver as regras.</p>
-        <div class="kill-chain">
-            {% for stage in kill_chain %}
-            <a href="{{ stage.url }}" class="kill-chain-stage {% if not stage.count %}kill-chain-stage-empty{% endif %}" title="{{ stage.description }}">
-                <div class="kill-chain-count">{{ stage.count }}</div>
-                <div class="kill-chain-name">{{ stage.name }}</div>
-            </a>
-            {% if not forloop.last %}<div class="kill-chain-arrow"><i class="bi bi-chevron-right"></i></div>{% endif %}
+        <h5 class="mb-1"><i class="bi bi-diagram-3" style="color: var(--scv-accent);"></i> Camadas de ataque cobertas</h5>
+        <p class="text-muted small mb-3">Quantas regras (do filtro atual) cobrem cada camada. Clique numa camada para ver as regras.</p>
+        <ul class="nav nav-pills mb-3" role="tablist">
+            {% for widget in layer_widgets %}
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if forloop.first %}active{% endif %}" data-bs-toggle="pill" data-bs-target="#layerWidget-{{ widget.key }}" type="button" role="tab">{{ widget.name }}</button>
+            </li>
+            {% endfor %}
+        </ul>
+        <div class="tab-content">
+            {% for widget in layer_widgets %}
+            <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" id="layerWidget-{{ widget.key }}" role="tabpanel">
+                {% if widget.layers %}
+                <div class="layer-chain">
+                    {% for layer in widget.layers %}
+                    <a href="{{ layer.url }}" class="layer-chain-stage {% if not layer.count %}layer-chain-stage-empty{% endif %}" title="{{ layer.description }}">
+                        <div class="layer-chain-count">{{ layer.count }}</div>
+                        <div class="layer-chain-name">{{ layer.name }}</div>
+                    </a>
+                    {% if not forloop.last %}<div class="layer-chain-arrow"><i class="bi bi-chevron-right"></i></div>{% endif %}
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="alert alert-light border d-flex justify-content-between align-items-center mb-0">
+                    <span><i class="bi bi-diagram-3"></i> {{ widget.name }} ainda não foi configurado.</span>
+                    <code class="small">{{ widget.seed_hint }}</code>
+                </div>
+                {% endif %}
+            </div>
             {% endfor %}
         </div>
     </div>
 </div>
-{% else %}
-<div class="alert alert-light border d-flex justify-content-between align-items-center mb-4">
-    <span><i class="bi bi-diagram-3"></i> A visualização da Cyber Kill Chain ainda não foi configurada.</span>
-    <code class="small">python manage.py seed_kill_chain</code>
-</div>
-{% endif %}
 
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value">{{ cards.total_rules }}</div><div class="stat-label">Regras</div></div></div>

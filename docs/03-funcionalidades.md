@@ -31,10 +31,10 @@ aplica. Nomes de URL no formato `namespace:nome` (use com `{% url %}` /
 | `/` | `dashboard` | só login |
 
 - Filtros opcionais `?client=<id>&technology=<id>` (validados com `parse_int_or_none`). O filtro de tecnologia afeta só as regras.
-- Toda a agregação está em `dashboard/services.py::build_dashboard`, que devolve `{cards, charts, kill_chain}`:
+- Toda a agregação está em `dashboard/services.py::build_dashboard`, que devolve `{cards, charts, layer_widgets}`:
   - **cards**: totais de regras por `status.category`, revisões pendentes, casos de uso cobertos/parciais/não cobertos, gaps totais/abertos, fontes sem dados.
   - **charts**: listas `[{label, value, color}]` via `_grouped()` (GROUP BY). A cor vem do catálogo; se não houver, usa `FALLBACK_PALETTE`.
-  - **kill_chain**: se existir o Framework `"Cyber Kill Chain"`, 1 item por etapa com contagem de regras e link para `/regras/?stage=<id>`.
+  - **layer_widgets**: duas abas fixas (`LAYER_WIDGETS` em `dashboard/services.py`) - Cyber Kill Chain e MITRE ATT&CK, pelo nome exato do Framework (`taxonomy.services.LAYER_FRAMEWORK_NAMES`). Cada camada é um controle de nível superior (`taxonomy/services.py::framework_layers` - sem `parent`, ex.: uma tática do MITRE) com a contagem somando regras ligadas a ele **ou a qualquer descendente** (ex.: as técnicas daquela tática), e link para `/regras/?stage=<id>` (o mesmo filtro expande para os descendentes em `detections/views.py::RuleListView`). Framework inexistente → aba mostra o comando de seed (`seed_kill_chain` / `seed_mitre_attack`) em vez da lista.
 - Template: `dashboard/templates/dashboard/dashboard.html` (Chart.js). Mostra o fluxo de primeiros passos quando não há cliente ou regra (`is_new_setup`).
 
 ## 3. Clientes — `clients`
@@ -154,6 +154,7 @@ Vínculos sem status ficam fora da conta. Sem nenhum aplicável → `percentage 
 - **Catálogos simples são genéricos**: um único conjunto de views (`CatalogListView`, `CatalogCreateView`…) serve todos. O `<catalog>` da URL é a chave de `taxonomy/registry.py::CATALOGS` (`tecnologias`, `status`, `severidades`, `categorias`, `tags`, `tipos`, `responsaveis`), que define model, form, rótulo, ícone, descrição e colunas. `CatalogPermissionMixin` resolve o model e checa a permissão dinamicamente.
 - **Export ATT&CK Navigator**: `taxonomy/services.py::build_navigator_layer` gera layer JSON v4.5, `score` = nº de regras por controle; aceita `?client=` e `?technology=`. Controles sem regra são omitidos.
 - `python manage.py seed_kill_chain` cria o framework "Cyber Kill Chain" com as etapas KC1–KC7 (idempotente).
+- `python manage.py seed_mitre_attack` cria o framework "MITRE ATT&CK" com as 14 táticas (`TA01`..`TA14`, idempotente) como controles de topo. Técnicas **não** são semeadas (mudam a cada release) - cadastre-as à mão como controle-filho de uma tática (campo "Pai").
 
 ## 8. Histórico — `audit`
 
@@ -185,12 +186,13 @@ Há duas versões, ambas no botão "Exportar relatório" da página do cliente:
 **Versão para o cliente** (pode ser enviada como está):
 
 - `reports/services.py::build_client_facing_report` → dict próprio; `reports/pdf.py::render_client_facing_report_pdf` renderiza.
-- Seções: resumo executivo → ações pendentes do cliente → cobertura por caso de uso → cobertura por framework → detecções ativas → itens em tratamento pelo SOC/terceiros.
+- Seções: resumo executivo → **camadas de ataque protegidas** → ações pendentes do cliente → cobertura por caso de uso → cobertura por framework → detecções ativas → itens em tratamento pelo SOC/terceiros.
 - **Nunca inclui** dados internos: ID interno/do vendor da regra, notas, analista dono do caso de uso, flags de inoperância/revisão, regras que não estão ativas.
 - Regras de negócio:
   - "Ações pendentes do cliente" = gaps abertos cujo Responsável tem `is_client=True` (marcado em Configurações › Responsáveis — nunca pelo nome) + fontes de log com status `NOT_RECEIVING`/`NOT_INTEGRATED`, com quantas detecções **ativas** dependem de cada uma.
   - Casos de uso `NOT_APPLICABLE` não aparecem.
-  - Cobertura por framework: um controle está coberto se tem ≥ 1 regra **ativa** deste cliente. Frameworks com até `FRAMEWORK_FULL_LIST_MAX_CONTROLS` (30) controles são listados inteiros (ex.: Kill Chain); maiores (ex.: MITRE completo) listam só os cobertos.
+  - **Camadas de ataque protegidas** (`_layer_coverage` em `reports/services.py`): visual executivo, uma tira de células coloridas por camada (Cyber Kill Chain / MITRE ATT&CK, mesma ideia do widget do Dashboard - `reports/pdf.py::_layer_coverage`). Verde = pelo menos 1 regra **ativa** deste cliente ligada à camada ou a algum descendente; cinza = não coberta. Pensado para ser lido em 5 segundos, sem abrir a tabela controle a controle.
+  - Cobertura por framework: um controle está coberto se tem ≥ 1 regra **ativa** deste cliente. Frameworks com até `FRAMEWORK_FULL_LIST_MAX_CONTROLS` (30) controles são listados inteiros (ex.: Kill Chain); maiores (ex.: MITRE completo) listam só os cobertos. Lista **todo** Framework ativo, não só os dois fixos de "Camadas de ataque protegidas".
 
 Para incluir um dado novo: adicione-o no service da versão certa e depois em **cada** renderizador que deve exibi-lo. Antes de pôr algo na versão do cliente, pergunte: "posso mostrar isso ao cliente?".
 

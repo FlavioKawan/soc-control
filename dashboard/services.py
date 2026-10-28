@@ -6,7 +6,17 @@ from catalog.models import ClientLogSource, ClientUseCase
 from detections.models import Rule
 from gaps.models import Gap
 from taxonomy.choices import StatusCategory
-from taxonomy.models import Framework, FrameworkControl
+from taxonomy.models import Framework
+from taxonomy.services import framework_layers
+
+#: key -> (Framework name, hint shown when it hasn't been seeded/created yet).
+#: Both are "fixed" widgets the Dashboard always offers a tab for (see
+#: taxonomy/services.py::LAYER_FRAMEWORK_NAMES) - MITRE ATT&CK's tactics
+#: come from seed_mitre_attack, techniques are added by hand under them.
+LAYER_WIDGETS = [
+    ("kill_chain", "Cyber Kill Chain", "python manage.py seed_kill_chain"),
+    ("mitre_attack", "MITRE ATT&CK", "python manage.py seed_mitre_attack"),
+]
 
 FALLBACK_PALETTE = [
     "#4f46e5", "#0ea5e9", "#14b8a6", "#f59e0b", "#ef4444",
@@ -79,30 +89,30 @@ def build_dashboard(client=None, technology=None):
         ],
     }
 
-    kill_chain_framework = Framework.objects.filter(name="Cyber Kill Chain").first()
-    kill_chain = None
-    if kill_chain_framework:
-        base_url = reverse("detections:rule_list")
-        extra = []
-        if client:
-            extra.append(f"client={client.pk}")
-        if technology:
-            extra.append(f"technology={technology.pk}")
-        suffix = ("&" + "&".join(extra)) if extra else ""
+    base_url = reverse("detections:rule_list")
+    extra = []
+    if client:
+        extra.append(f"client={client.pk}")
+    if technology:
+        extra.append(f"technology={technology.pk}")
+    suffix = ("&" + "&".join(extra)) if extra else ""
 
-        stages = FrameworkControl.objects.filter(
-            framework=kill_chain_framework, is_active=True
-        ).order_by("code")
-        kill_chain = [
-            {
-                "id": stage.pk,
-                "code": stage.code,
-                "name": stage.name,
-                "description": stage.description,
-                "count": rule_qs.filter(framework_controls=stage).count(),
-                "url": f"{base_url}?stage={stage.pk}{suffix}",
-            }
-            for stage in stages
-        ]
+    layer_widgets = []
+    for key, framework_name, seed_hint in LAYER_WIDGETS:
+        framework = Framework.objects.filter(name=framework_name).first()
+        layers = None
+        if framework:
+            layers = [
+                {
+                    "id": layer["control"].pk,
+                    "code": layer["control"].code,
+                    "name": layer["control"].name,
+                    "description": layer["control"].description,
+                    "count": rule_qs.filter(framework_controls__in=layer["control_ids"]).distinct().count(),
+                    "url": f"{base_url}?stage={layer['control'].pk}{suffix}",
+                }
+                for layer in framework_layers(framework)
+            ]
+        layer_widgets.append({"key": key, "name": framework_name, "seed_hint": seed_hint, "layers": layers})
 
-    return {"cards": cards, "charts": charts, "kill_chain": kill_chain}
+    return {"cards": cards, "charts": charts, "layer_widgets": layer_widgets}

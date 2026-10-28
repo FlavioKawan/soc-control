@@ -1,5 +1,44 @@
 from django.utils import timezone
 
+#: The two Frameworks the Dashboard and the client-facing report always
+#: offer a dedicated "layer" view for, picked by name. Both are seeded by
+#: management commands (seed_kill_chain, seed_mitre_attack) as reference
+#: content, not hardcoded business rules - any other Framework still works
+#: everywhere else (Navigator export, framework-by-framework coverage on
+#: the internal report), it just doesn't get this specific widget.
+LAYER_FRAMEWORK_NAMES = ("Cyber Kill Chain", "MITRE ATT&CK")
+
+
+def control_and_descendant_ids(control):
+    """A control's id plus every active descendant's (e.g. a MITRE ATT&CK
+    tactic's techniques and sub-techniques) - recursive, so it also copes
+    with sub-techniques one level deeper than the tactic->technique a
+    Framework like Kill Chain never has."""
+    ids = [control.pk]
+    for child in control.children.filter(is_active=True):
+        ids.extend(control_and_descendant_ids(child))
+    return ids
+
+
+def framework_layers(framework):
+    """
+    Groups a Framework's controls into top-level "layers" - a Cyber Kill
+    Chain stage, or a MITRE ATT&CK tactic - each with the ids of every
+    descendant control folded in. Counting rules one technique at a time
+    reads as a wall of codes; counting at this level reads as "which
+    layers are we protecting", which is what the Dashboard widget and the
+    client report need.
+
+    Frameworks without hierarchy (Kill Chain: every control is already
+    top-level) come back as one layer per control, same as iterating
+    `framework.controls` directly.
+    """
+    top_level = framework.controls.filter(is_active=True, parent__isnull=True).order_by("code")
+    return [
+        {"control": control, "control_ids": control_and_descendant_ids(control)}
+        for control in top_level
+    ]
+
 
 def build_navigator_layer(framework, client=None, technology=None):
     """

@@ -10,7 +10,7 @@ from detections.models import Rule
 
 from .choices import CategoryScope, StatusCategory, StatusScope
 from .models import Category, Framework, FrameworkControl, Severity, Status, Tag, Technology
-from .services import build_navigator_layer
+from .services import build_navigator_layer, control_and_descendant_ids, framework_layers
 
 
 class ConfigurableOptionTests(TestCase):
@@ -139,6 +139,52 @@ class CatalogPermissionTests(TestCase):
         self.assertTrue(Status.objects.filter(pk=status.pk).exists())
         messages = list(response.wsgi_request._messages)
         self.assertTrue(any("ainda está em uso" in str(m) for m in messages))
+
+
+class FrameworkLayersTests(TestCase):
+    """framework_layers()/control_and_descendant_ids() back both the
+    Dashboard's Kill Chain/MITRE ATT&CK widget and the client report's
+    layer coverage - tested once here instead of in both callers."""
+
+    def setUp(self):
+        self.framework = Framework.objects.create(name="MITRE ATT&CK")
+
+    def test_flat_framework_returns_one_layer_per_control(self):
+        FrameworkControl.objects.create(framework=self.framework, code="KC1", name="Reconhecimento")
+        FrameworkControl.objects.create(framework=self.framework, code="KC2", name="Entrega")
+
+        layers = framework_layers(self.framework)
+        self.assertEqual([layer["control"].code for layer in layers], ["KC1", "KC2"])
+        self.assertEqual(layers[0]["control_ids"], [layers[0]["control"].pk])
+
+    def test_child_controls_are_excluded_as_top_level_layers(self):
+        tactic = FrameworkControl.objects.create(framework=self.framework, code="TA06", name="Credential Access")
+        FrameworkControl.objects.create(
+            framework=self.framework, code="T1110", name="Brute Force", parent=tactic
+        )
+
+        layers = framework_layers(self.framework)
+        self.assertEqual([layer["control"].code for layer in layers], ["TA06"])
+
+    def test_control_and_descendant_ids_includes_grandchildren(self):
+        tactic = FrameworkControl.objects.create(framework=self.framework, code="TA06", name="Credential Access")
+        technique = FrameworkControl.objects.create(
+            framework=self.framework, code="T1110", name="Brute Force", parent=tactic
+        )
+        sub_technique = FrameworkControl.objects.create(
+            framework=self.framework, code="T1110.001", name="Password Guessing", parent=technique
+        )
+
+        ids = control_and_descendant_ids(tactic)
+        self.assertEqual(set(ids), {tactic.pk, technique.pk, sub_technique.pk})
+
+    def test_inactive_children_are_not_counted_as_descendants(self):
+        tactic = FrameworkControl.objects.create(framework=self.framework, code="TA06", name="Credential Access")
+        FrameworkControl.objects.create(
+            framework=self.framework, code="T1110", name="Brute Force", parent=tactic, is_active=False
+        )
+
+        self.assertEqual(control_and_descendant_ids(tactic), [tactic.pk])
 
 
 class NavigatorLayerServiceTests(TestCase):

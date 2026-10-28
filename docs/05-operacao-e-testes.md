@@ -19,6 +19,7 @@ Dados de referência opcionais:
 
 ```bash
 docker compose exec web python manage.py seed_kill_chain
+docker compose exec web python manage.py seed_mitre_attack
 ```
 
 Em desenvolvimento, deixe `DJANGO_EMAIL_BACKEND` fora do `.env` (ou use o de
@@ -103,15 +104,15 @@ criar bancos, e o usuário padrão da imagem oficial tem.
 | App | Cobertura principal |
 |---|---|
 | `accounts` | limite de tentativas de login (por IP, reset no sucesso); CRUD de usuários da plataforma, grupos só para ADMIN, redefinição de senha, travas contra autoexclusão/autodesativação |
-| `taxonomy` | auto-slug, semântica de Status, escopo de Category, permissões dos catálogos, layer do Navigator |
+| `taxonomy` | auto-slug, semântica de Status, escopo de Category, permissões dos catálogos, layer do Navigator, agrupamento de camadas (`framework_layers`/descendentes) |
 | `clients` | escopo de status no form, permissões por grupo, busca |
 | `catalog` | vínculos por cliente, cálculo de cobertura, templates (idempotência), permissões |
-| `detections` | form, revisão vencida, inoperância, inconsistência de cobertura, CSV, colunas, filtros, parâmetros malformados, open redirect |
+| `detections` | form, revisão vencida, inoperância, inconsistência de cobertura, CSV, colunas, filtros, parâmetros malformados, open redirect, filtro por camada (`?stage=`) incluindo descendentes |
 | `gaps` | model, escopo do form por cliente, permissões, filtros, vínculos opcionais (SET_NULL), catálogo de Responsáveis |
 | `audit` | create/update/delete, M2M, usuário da requisição, exclusão em cascata de cliente, permissão |
-| `dashboard` | parâmetros malformados |
+| `dashboard` | parâmetros malformados, widgets de camada (Kill Chain/MITRE ATT&CK) |
 | `search` | resultados e filtro por permissão |
-| `reports` | services interno e para o cliente (ações do cliente, cobertura por framework, só regras ativas), download PDF/Excel, permissões |
+| `reports` | services interno e para o cliente (ações do cliente, cobertura por framework, camadas de ataque protegidas, só regras ativas), download PDF/Excel, permissões |
 | `notifications` | regras vencidas, gaps parados, montagem do digest, comando de envio |
 
 ## 5. Digest por e-mail (agendamento)
@@ -151,7 +152,7 @@ e rodar `python manage.py check --deploy`.
 | Login bloqueado | 10 falhas do mesmo IP em 15 min | esperar, ou no shell: `from django.core.cache import cache; cache.clear()` |
 | Alteração não aparece no Histórico | feita via `QuerySet.update()`/`bulk_*`/SQL cru (não disparam signals), ou o model não está em `TRACKED_MODELS` | ver `01-arquitetura.md §8` |
 | Histórico com usuário vazio | alteração feita fora de requisição (shell, comando agendado) | esperado |
-| Widget Kill Chain sumiu do dashboard | framework renomeado (é buscado pelo nome "Cyber Kill Chain") | renomear de volta ou rodar `seed_kill_chain` |
+| Widget de camadas (Kill Chain/MITRE) sumiu do dashboard | framework renomeado (é buscado pelo nome exato "Cyber Kill Chain"/"MITRE ATT&CK") | renomear de volta ou rodar `seed_kill_chain`/`seed_mitre_attack` |
 | Mudança em `.py` não surtiu efeito | Gunicorn não recarrega sozinho | `docker compose restart web` |
 
 ## 8. Segurança — pentest interno

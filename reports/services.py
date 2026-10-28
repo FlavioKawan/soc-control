@@ -7,6 +7,7 @@ from catalog.services import compute_use_case_coverage
 from detections.services import rule_is_possibly_inoperative, rule_is_review_overdue
 from taxonomy.choices import StatusCategory
 from taxonomy.models import Framework
+from taxonomy.services import LAYER_FRAMEWORK_NAMES, framework_layers
 
 #: Frameworks this small (e.g. Cyber Kill Chain, 7 stages) are listed in
 #: full, uncovered controls included. Larger ones (MITRE ATT&CK, hundreds of
@@ -123,6 +124,7 @@ def build_client_facing_report(client):
         "other_gaps": other_gaps,
         "problem_log_sources": problem_log_sources,
         "use_case_links": use_case_links,
+        "layer_coverage": _layer_coverage(client),
         "frameworks": _framework_coverage(client),
     }
 
@@ -130,6 +132,40 @@ def build_client_facing_report(client):
 def _count_by_criticality(gaps):
     counts = Counter(gap.criticality.name if gap.criticality else "Sem criticidade" for gap in gaps)
     return sorted(counts.items(), key=lambda item: -item[1])
+
+
+def _layer_coverage(client):
+    """
+    Executive, layer-level view of protection for Cyber Kill Chain and
+    MITRE ATT&CK (see taxonomy.services.LAYER_FRAMEWORK_NAMES) - the same
+    breakdown the Dashboard's layer widget shows, scoped to this client
+    and only counting ACTIVE rules (a rule in test or disabled doesn't
+    protect the client yet). Deliberately separate from
+    _framework_coverage(): that one lists every control, for the SOC's own
+    technical report; a client reading this one only needs "are we
+    covering this layer or not", not a control-by-control table.
+    """
+    result = []
+    for framework in Framework.objects.filter(is_active=True, name__in=LAYER_FRAMEWORK_NAMES).order_by("name"):
+        layers = framework_layers(framework)
+        if not layers:
+            continue
+        result.append(
+            {
+                "framework": framework,
+                "layers": [
+                    {
+                        "name": layer["control"].name,
+                        "covered": client.rules.filter(
+                            status__category=StatusCategory.ACTIVE,
+                            framework_controls__in=layer["control_ids"],
+                        ).exists(),
+                    }
+                    for layer in layers
+                ],
+            }
+        )
+    return result
 
 
 def _framework_coverage(client):

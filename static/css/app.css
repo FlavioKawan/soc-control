@@ -552,7 +552,7 @@ form input[type="password"] {
     height: 220px;
 }
 
-.kill-chain {
+.layer-chain {
     display: flex;
     align-items: center;
     overflow-x: auto;
@@ -560,7 +560,7 @@ form input[type="password"] {
     padding-bottom: 0.25rem;
 }
 
-.kill-chain-stage {
+.layer-chain-stage {
     flex: 1 1 0;
     min-width: 110px;
     background: var(--scv-accent-light);
@@ -573,26 +573,26 @@ form input[type="password"] {
     transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
-.kill-chain-stage:hover {
+.layer-chain-stage:hover {
     transform: translateY(-2px);
     box-shadow: var(--scv-shadow-md);
 }
 
-.kill-chain-stage-empty {
+.layer-chain-stage-empty {
     background: var(--scv-table-head-bg);
 }
 
-.kill-chain-count {
+.layer-chain-count {
     font-size: 1.3rem;
     font-weight: 700;
     color: var(--scv-accent);
 }
 
-.kill-chain-stage-empty .kill-chain-count {
+.layer-chain-stage-empty .layer-chain-count {
     color: var(--scv-text-muted);
 }
 
-.kill-chain-name {
+.layer-chain-name {
     font-size: 0.72rem;
     font-weight: 600;
     color: var(--scv-text-muted);
@@ -601,7 +601,7 @@ form input[type="password"] {
     margin-top: 0.15rem;
 }
 
-.kill-chain-arrow {
+.layer-chain-arrow {
     color: var(--scv-text-muted);
     flex-shrink: 0;
 }

@@ -8,6 +8,8 @@ from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, FormView, ListView, UpdateView
 
 from core.utils import parse_int_or_none
+from taxonomy.models import FrameworkControl
+from taxonomy.services import control_and_descendant_ids
 
 from .forms import RuleColumnPreferenceForm, RuleFilterForm, RuleForm, RuleImportForm
 from .models import AVAILABLE_RULE_COLUMNS, DEFAULT_RULE_COLUMNS, Rule, RuleColumnPreference
@@ -52,11 +54,20 @@ class RuleListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             elif review_status == "undated":
                 qs = qs.filter(next_review_at__isnull=True)
 
-        # Not part of the filter form: the Cyber Kill Chain widget on the
-        # dashboard links straight to a stage via ?stage=<FrameworkControl id>.
+        # Not part of the filter form: the Dashboard's Kill Chain/MITRE
+        # ATT&CK widget links straight to a layer via ?stage=<FrameworkControl
+        # id> - include the layer's own control plus every descendant (e.g.
+        # a tactic's techniques), since rules are normally tagged at the
+        # technique level, not the tactic.
         stage_id = parse_int_or_none(self.request.GET.get("stage"))
         if stage_id:
-            qs = qs.filter(framework_controls__id=stage_id)
+            stage_control = FrameworkControl.objects.filter(pk=stage_id).first()
+            if stage_control:
+                qs = qs.filter(framework_controls__id__in=control_and_descendant_ids(stage_control))
+            else:
+                # A stage id that doesn't match anything should show zero
+                # rules, not silently fall back to "no filter at all".
+                qs = qs.none()
 
         return qs.distinct()
 
@@ -76,7 +87,6 @@ class RuleListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx["has_advanced_filters"] = any(self.request.GET.get(f) for f in advanced_fields)
         stage_id = parse_int_or_none(self.request.GET.get("stage"))
         if stage_id:
-            from taxonomy.models import FrameworkControl
             ctx["active_stage"] = FrameworkControl.objects.filter(pk=stage_id).select_related("framework").first()
         ctx["filter_form"] = self.filter_form
         ctx["visible_columns"] = visible

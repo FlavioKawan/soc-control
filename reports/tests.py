@@ -13,6 +13,7 @@ from gaps.models import Gap
 from taxonomy.choices import StatusCategory, StatusScope
 from taxonomy.models import Framework, FrameworkControl, ResponsibleParty, Status, Technology
 
+from .pdf import render_client_facing_report_pdf
 from .services import FRAMEWORK_FULL_LIST_MAX_CONTROLS, build_client_facing_report, build_client_report
 
 
@@ -118,6 +119,42 @@ class ClientFacingReportServiceTests(TestCase):
         self.assertTrue(item["lists_all"])
         self.assertEqual([(c.code, c.active_rules_count) for c in item["controls"]], [("KC1", 1), ("KC2", 0)])
 
+    def test_layer_coverage_only_includes_kill_chain_and_mitre_attack(self):
+        kill_chain = Framework.objects.create(name="Cyber Kill Chain")
+        FrameworkControl.objects.create(framework=kill_chain, code="KC1", name="Reconhecimento")
+        mitre = Framework.objects.create(name="MITRE ATT&CK")
+        FrameworkControl.objects.create(framework=mitre, code="TA06", name="Credential Access")
+        other = Framework.objects.create(name="Some Other Framework")
+        FrameworkControl.objects.create(framework=other, code="X1", name="Something")
+
+        report = build_client_facing_report(self.client_obj)
+        self.assertEqual(
+            sorted(item["framework"].name for item in report["layer_coverage"]),
+            ["Cyber Kill Chain", "MITRE ATT&CK"],
+        )
+
+    def test_layer_is_covered_by_an_active_rule_on_a_descendant_control(self):
+        framework = Framework.objects.create(name="MITRE ATT&CK")
+        tactic = FrameworkControl.objects.create(framework=framework, code="TA06", name="Credential Access")
+        technique = FrameworkControl.objects.create(
+            framework=framework, code="T1110", name="Brute Force", parent=tactic
+        )
+        self._rule("SOC-001", self.active).framework_controls.add(technique)
+
+        [item] = build_client_facing_report(self.client_obj)["layer_coverage"]
+        [layer] = item["layers"]
+        self.assertEqual(layer["name"], "Credential Access")
+        self.assertTrue(layer["covered"])
+
+    def test_layer_is_not_covered_by_a_non_active_rule(self):
+        framework = Framework.objects.create(name="Cyber Kill Chain")
+        stage = FrameworkControl.objects.create(framework=framework, code="KC1", name="Reconhecimento")
+        self._rule("SOC-001", self.testing).framework_controls.add(stage)
+
+        [item] = build_client_facing_report(self.client_obj)["layer_coverage"]
+        [layer] = item["layers"]
+        self.assertFalse(layer["covered"])
+
     def test_large_frameworks_list_only_covered_controls(self):
         framework = Framework.objects.create(name="MITRE ATT&CK")
         controls = FrameworkControl.objects.bulk_create(
@@ -215,3 +252,33 @@ class ClientReportViewTests(TestCase):
 
         response = self.client.get(reverse("reports:client_report_pdf", kwargs={"pk": self.client_obj.pk}))
         self.assertEqual(response.status_code, 403)
+
+
+class LayerCoveragePdfTests(TestCase):
+    """Renders the "Camadas de ataque protegidas" table directly (faster
+    than going through the view) with a realistic mix of covered/uncovered
+    layers and a tactic/technique framework, since the view-level PDF
+    tests above only exercise the empty case (no Framework created)."""
+
+    def test_renders_without_crashing_with_covered_and_uncovered_layers(self):
+        client_obj = Client.objects.create(name="Acme Corp")
+        technology = Technology.objects.create(name="Wazuh")
+        active = Status.objects.create(name="Ativa", scope=[StatusScope.RULE], category=StatusCategory.ACTIVE)
+
+        kill_chain = Framework.objects.create(name="Cyber Kill Chain")
+        FrameworkControl.objects.create(framework=kill_chain, code="KC1", name="Reconhecimento")
+        stage_covered = FrameworkControl.objects.create(framework=kill_chain, code="KC2", name="Entrega")
+
+        mitre = Framework.objects.create(name="MITRE ATT&CK")
+        tactic = FrameworkControl.objects.create(framework=mitre, code="TA06", name="Credential Access")
+        technique = FrameworkControl.objects.create(
+            framework=mitre, code="T1110", name="Brute Force", parent=tactic
+        )
+
+        rule = Rule.objects.create(
+            internal_id="SOC-001", name="Brute Force", client=client_obj, technology=technology, status=active
+        )
+        rule.framework_controls.add(stage_covered, technique)
+
+        pdf_bytes = render_client_facing_report_pdf(build_client_facing_report(client_obj))
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))

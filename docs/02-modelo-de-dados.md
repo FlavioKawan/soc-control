@@ -87,8 +87,13 @@ Campos extras:
 | `ResponsibleParty` | `is_client: bool` | marca o responsável que representa o cliente; o relatório para o cliente usa isso para listar "ações pendentes do seu lado" |
 
 `Framework` (nome único, versão, URL) → `FrameworkControl` (`code` único por
-framework, `parent` opcional para sub-técnicas). Usado para MITRE ATT&CK,
-Cyber Kill Chain (`seed_kill_chain`) e qualquer outro framework.
+framework, `parent` opcional para sub-técnicas). Usado para MITRE ATT&CK
+(`seed_mitre_attack` semeia as 14 táticas de topo; técnicas entram como
+filhas, à mão), Cyber Kill Chain (`seed_kill_chain`) e qualquer outro
+framework. `taxonomy/services.py::framework_layers` agrupa os controles de
+topo (sem `parent`) com todos os descendentes - é a base do widget de
+camadas do Dashboard e da seção "Camadas de ataque protegidas" do
+relatório para o cliente (`03-funcionalidades.md §2` e `§9`).
 
 ### 3.2 Enums fixos — `taxonomy/choices.py`
 

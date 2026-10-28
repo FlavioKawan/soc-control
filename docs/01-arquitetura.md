@@ -56,7 +56,7 @@ modelos.
 | `detections` | Regras, filtros, colunas configuráveis, importação CSV, verificações de inconsistência | sim |
 | `gaps` | Gaps de monitoramento | sim |
 | `audit` | Histórico de alterações via signals | sim |
-| `dashboard` | indicadores agregados, gráficos, Cyber Kill Chain | não |
+| `dashboard` | indicadores agregados, gráficos, camadas (Cyber Kill Chain / MITRE ATT&CK) | não |
 | `search` | busca global multi-entidade | não |
 | `reports` | relatório por cliente em PDF/Excel | não |
 | `notifications` | digest por e-mail (comando `send_digest`) | não |
@@ -271,5 +271,5 @@ itens para priorizar.
 | 2 | `GapForm` usa o `client` vindo de `?client=` / POST direto num `.filter(client_id=...)` sem `parse_int_or_none` — `/gaps/novo/?client=abc` tende a gerar erro 500, o mesmo tipo de falha já corrigido em outras telas. | `gaps/forms.py`, `gaps/views.py::GapCreateView.get_initial` | Médio (crash com URL malformada). |
 | 3 | Comentário em `AVAILABLE_RULE_COLUMNS` cita `_rule_columns.html`, que não existe; as colunas são renderizadas por um `if/elif` em `detections/templates/detections/rule_list.html`. | `detections/models.py` | Documentação enganosa. |
 | 4 | N+1: `rule_is_possibly_inoperative` faz 1 consulta por regra na listagem (até 25 por página) e no relatório (todas as regras do cliente). | `detections/views.py`, `reports/services.py` | Desempenho em clientes grandes. |
-| 5 | O dashboard encontra a Kill Chain pelo **nome** exato `"Cyber Kill Chain"`; renomear o framework faz o widget sumir. | `dashboard/services.py` | Baixo. |
-| 6 | Itens de menu "Campos personalizados" (Fase 8) e "Usuários" estão desabilitados — gestão de usuários hoje é pelo Django Admin. | `templates/base.html` | Funcional. |
+| 5 | O dashboard e o relatório para o cliente encontram as duas camadas pelo **nome** exato (`"Cyber Kill Chain"`, `"MITRE ATT&CK"` - `taxonomy/services.py::LAYER_FRAMEWORK_NAMES`); renomear o framework faz o widget/seção sumir. | `dashboard/services.py`, `reports/services.py` | Baixo. |
+| 6 | Item de menu "Campos personalizados" (Fase 8) está desabilitado. | `templates/base.html` | Funcional. |

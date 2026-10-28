@@ -2,6 +2,7 @@ import io
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
@@ -13,6 +14,9 @@ _STYLES["Heading2"].keepWithNext = True
 _STYLES["Heading3"].keepWithNext = True
 _CELL_STYLE = ParagraphStyle("cell", parent=_STYLES["Normal"], fontSize=8, leading=10)
 _NOTE_STYLE = ParagraphStyle("note", parent=_STYLES["Normal"], fontSize=8, textColor=colors.HexColor("#6b7280"))
+_LAYER_CELL_STYLE = ParagraphStyle(
+    "layer_cell", parent=_STYLES["Normal"], fontSize=7, leading=9, alignment=TA_CENTER
+)
 
 
 def render_client_report_pdf(report):
@@ -94,6 +98,7 @@ def render_client_facing_report_pdf(report):
     ]
 
     elements += _executive_summary(report)
+    elements += _layer_coverage(report["layer_coverage"])
     elements += _client_actions(report)
     elements += _use_case_coverage(report["use_case_links"])
     elements += _framework_coverage(report["frameworks"])
@@ -151,6 +156,48 @@ def _executive_summary(report):
         ["Ações pendentes do seu lado", str(pending_actions)],
     ]
     return [Paragraph("Resumo executivo", _STYLES["Heading2"]), _kv_table(rows), Spacer(1, 0.6 * cm)]
+
+
+def _layer_coverage(layer_coverage):
+    """
+    Visual counterpart of the Dashboard's layer-chain widget, as a PDF
+    table: one colored cell per layer (Cyber Kill Chain stage / MITRE
+    ATT&CK tactic), green when at least one active rule covers it. Meant
+    to be read in five seconds by someone who will never open a
+    control-by-control table - that breakdown is "Cobertura por
+    framework" below, for whoever wants it.
+    """
+    elements = [Paragraph("Camadas de ataque protegidas", _STYLES["Heading2"])]
+    if not layer_coverage:
+        elements += [
+            Paragraph("Nenhuma camada configurada (Cyber Kill Chain / MITRE ATT&CK).", _STYLES["Normal"]),
+            Spacer(1, 0.6 * cm),
+        ]
+        return elements
+
+    covered_bg, uncovered_bg, uncovered_fg = (
+        colors.HexColor("#22c55e"), colors.HexColor("#e5e7eb"), colors.HexColor("#6b7280"),
+    )
+    for item in layer_coverage:
+        layers = item["layers"]
+        elements.append(Paragraph(escape(item["framework"].name), _STYLES["Heading3"]))
+        row = [Paragraph(escape(layer["name"]), _LAYER_CELL_STYLE) for layer in layers]
+        table = Table([row], colWidths=[(17 * cm) / len(row)] * len(row))
+        style = [
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.white),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]
+        for i, layer in enumerate(layers):
+            bg, fg = (covered_bg, colors.white) if layer["covered"] else (uncovered_bg, uncovered_fg)
+            style.append(("BACKGROUND", (i, 0), (i, 0), bg))
+            style.append(("TEXTCOLOR", (i, 0), (i, 0), fg))
+        table.setStyle(TableStyle(style))
+        elements.append(table)
+        elements.append(Spacer(1, 0.4 * cm))
+    elements.append(Spacer(1, 0.2 * cm))
+    return elements
 
 
 def _client_actions(report):
