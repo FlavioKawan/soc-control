@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load audit_extras %}
+{% block title %}Histórico - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Histórico de Alterações</h2>
+</div>
+<p class="text-muted">
+    Registro de quem criou, alterou ou excluiu Clientes, Regras e Gaps, e o
+    que mudou em cada alteração.
+</p>
+
+<form method="get" class="card shadow-sm p-3 mb-3">
+    <div class="row g-2">
+        <div class="col-md-4">{{ filter_form.q.label_tag }}{{ filter_form.q }}</div>
+        <div class="col-md-2">{{ filter_form.action.label_tag }}{{ filter_form.action }}</div>
+    </div>
+    <div class="mt-2">
+        <button class="btn btn-link btn-sm px-0" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
+            <i class="bi bi-sliders"></i> Filtros avançados
+        </button>
+    </div>
+    <div class="collapse {% if has_advanced_filters %}show{% endif %}" id="advancedFilters">
+        <div class="row g-2 mt-1">
+            <div class="col-md-3">{{ filter_form.client.label_tag }}{{ filter_form.client }}</div>
+            <div class="col-md-3">{{ filter_form.model_name.label_tag }}{{ filter_form.model_name }}</div>
+            <div class="col-md-3">{{ filter_form.user.label_tag }}{{ filter_form.user }}</div>
+        </div>
+    </div>
+    <div class="mt-2 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filtrar</button>
+        <a href="{% url 'audit:auditlog_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i> Limpar</a>
+    </div>
+</form>
+
+<table class="table table-striped shadow-sm">
+    <thead><tr><th>Data/hora</th><th>Usuário</th><th>Ação</th><th>Entidade</th><th>Objeto</th><th>Cliente</th><th>O que mudou</th></tr></thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td class="text-nowrap">{{ entry.timestamp|date:"d/m/Y H:i" }}</td>
+            <td>{{ entry.user|default:"Sistema" }}</td>
+            <td>
+                <span class="badge {% if entry.action == 'CREATE' %}bg-success{% elif entry.action == 'DELETE' %}bg-danger{% else %}bg-primary{% endif %}">
+                    {{ entry.get_action_display }}
+                </span>
+            </td>
+            <td>{{ entry.model_name }}</td>
+            <td>{{ entry.object_repr }}</td>
+            <td>{% if entry.client %}<a href="{% url 'clients:client_detail' pk=entry.client_id %}">{{ entry.client }}</a>{% else %}-{% endif %}</td>
+            <td>{{ entry.changes|audit_changes }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted">Nenhum registro encontrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+<nav>
+    <ul class="pagination">
+        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.previous_page_number %}">Anterior</a></li>{% endif %}
+        <li class="page-item disabled"><span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.next_page_number %}">Próxima</a></li>{% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

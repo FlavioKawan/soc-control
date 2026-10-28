@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Gaps - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Gaps</h2>
+    {% if can_add %}<a href="{% url 'gaps:gap_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo Gap</a>{% endif %}
+</div>
+<p class="text-muted">
+    Lacunas percebidas no monitoramento de um cliente — algo que falta
+    (fonte sem log, caso de uso sem regra, etc.), com responsável e
+    recomendação. Diferente de Regra (que já existe e funciona) e de Caso
+    de Uso (que descreve o cenário ideal, não o problema).
+</p>
+
+<form method="get" class="card shadow-sm p-3 mb-3">
+    <div class="row g-2">
+        <div class="col-md-3">{{ filter_form.q.label_tag }}{{ filter_form.q }}</div>
+        <div class="col-md-3">{{ filter_form.client.label_tag }}{{ filter_form.client }}</div>
+        <div class="col-md-2">{{ filter_form.status.label_tag }}{{ filter_form.status }}</div>
+        <div class="col-md-2">{{ filter_form.criticality.label_tag }}{{ filter_form.criticality }}</div>
+        <div class="col-md-2">{{ filter_form.responsible_party.label_tag }}{{ filter_form.responsible_party }}</div>
+        <div class="col-md-12 d-flex gap-2 mt-2">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filtrar</button>
+            <a href="{% url 'gaps:gap_list' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i> Limpar</a>
+        </div>
+    </div>
+</form>
+
+<table class="table table-striped shadow-sm">
+    <thead><tr><th>Código</th><th>Título</th><th>Cliente</th><th>Criticidade</th><th>Status</th><th>Responsável</th><th>Abertura</th><th class="text-end">Ações</th></tr></thead>
+    <tbody>
+        {% for gap in gaps %}
+        <tr>
+            <td><a href="{% url 'gaps:gap_detail' pk=gap.pk %}">{{ gap.code }}</a></td>
+            <td>{{ gap.title }}</td>
+            <td>{{ gap.client }}</td>
+            <td>{% if gap.criticality %}<span class="badge" style="background-color: {{ gap.criticality.color|default:'#6c757d' }};">{{ gap.criticality.name }}</span>{% else %}-{% endif %}</td>
+            <td>{% if gap.status %}<span class="badge" style="background-color: {{ gap.status.color|default:'#6c757d' }};">{{ gap.status.name }}</span>{% else %}-{% endif %}</td>
+            <td>{{ gap.responsible_party|default:"-" }}</td>
+            <td>{{ gap.opened_at|date:"d/m/Y" }}</td>
+            <td class="text-end">
+                {% if can_change %}<a href="{% url 'gaps:gap_update' pk=gap.pk %}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>{% endif %}
+                {% if can_delete %}<a href="{% url 'gaps:gap_delete' pk=gap.pk %}" class="btn btn-sm btn-outline-danger" title="Excluir"><i class="bi bi-trash"></i></a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-muted">Nenhum gap cadastrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+<nav>
+    <ul class="pagination">
+        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.previous_page_number %}">Anterior</a></li>{% endif %}
+        <li class="page-item disabled"><span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.next_page_number %}">Próxima</a></li>{% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Fontes de Log - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Fontes de Log (catálogo global)</h2>
+    {% if can_add %}
+    <a href="{% url 'catalog:logsource_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nova Fonte de Log</a>
+    {% endif %}
+</div>
+<p class="text-muted">
+    O tipo de log que existe no mundo (ex: "Windows Security"), independente
+    de cliente — existe uma vez só aqui. Se um cliente específico está de
+    fato recebendo esse log fica na aba "Fontes de Log" da página do
+    cliente, não aqui.
+</p>
+
+<form method="get" class="mb-3 d-flex gap-2" style="max-width: 400px;">
+    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar...">
+    <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
+</form>
+
+<table class="table table-striped shadow-sm">
+    <thead><tr><th>Nome</th><th>Categoria</th><th>Tecnologia</th><th>Tags</th><th>Ativo</th><th class="text-end">Ações</th></tr></thead>
+    <tbody>
+        {% for ls in log_sources %}
+        <tr>
+            <td>{{ ls.name }}</td>
+            <td>{{ ls.category|default:"-" }}</td>
+            <td>{{ ls.technology|default:"-" }}</td>
+            <td>{% for tag in ls.tags.all %}<span class="badge badge-neutral">{{ tag.name }}</span> {% endfor %}</td>
+            <td>{% if ls.is_active %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}</td>
+            <td class="text-end">
+                {% if can_change %}<a href="{% url 'catalog:logsource_update' pk=ls.pk %}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>{% endif %}
+                {% if can_delete %}<a href="{% url 'catalog:logsource_delete' pk=ls.pk %}" class="btn btn-sm btn-outline-danger" title="Excluir"><i class="bi bi-trash"></i></a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted">Nenhuma fonte de log cadastrada.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

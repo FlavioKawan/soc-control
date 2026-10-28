@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Excluir Cliente - SOC Control{% endblock %}
+{% block content %}
+<h2>Excluir Cliente</h2>
+<div class="card shadow-sm" style="max-width: 480px;">
+    <div class="card-body">
+        <p>Confirma a exclusão de <strong>{{ object }}</strong>?</p>
+        <p class="text-muted small">
+            Se este cliente já tiver regras, casos de uso, fontes de log ou gaps
+            associados (fases futuras), a exclusão será bloqueada para preservar
+            o histórico — prefira desativar o cliente alterando o status.
+        </p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Excluir</button>
+            <a href="{% url 'clients:client_detail' pk=object.pk %}" class="btn btn-outline-secondary">Cancelar</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

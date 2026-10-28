@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load audit_extras %}
+{% block title %}{{ gap.code }} - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-0">{{ gap.code }} - {{ gap.title }}</h2>
+        <small class="text-muted">{{ gap.client }}</small>
+    </div>
+    <div>
+        <a href="{% url 'gaps:gap_list' %}" class="btn btn-outline-secondary">Voltar</a>
+        {% if perms.gaps.change_gap %}<a href="{% url 'gaps:gap_update' pk=gap.pk %}" class="btn btn-primary">Editar</a>{% endif %}
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6 class="card-subtitle text-muted mb-2">Status</h6>{% if gap.status %}<span class="badge" style="background-color: {{ gap.status.color|default:'#6c757d' }};">{{ gap.status.name }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6 class="card-subtitle text-muted mb-2">Criticidade</h6>{% if gap.criticality %}<span class="badge" style="background-color: {{ gap.criticality.color|default:'#6c757d' }};">{{ gap.criticality.name }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6 class="card-subtitle text-muted mb-2">Responsável</h6>{{ gap.responsible_party|default:"-" }}</div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6 class="card-subtitle text-muted mb-2">Abertura / Conclusão</h6>{{ gap.opened_at|date:"d/m/Y" }} → {{ gap.closed_at|date:"d/m/Y"|default:"em aberto" }}</div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="card-subtitle text-muted mb-2">Descrição</h6>
+            <p>{{ gap.description|default:"-"|linebreaksbr }}</p>
+            <h6 class="card-subtitle text-muted mb-2">Impacto</h6>
+            <p class="mb-0">{{ gap.impact|default:"-"|linebreaksbr }}</p>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="card-subtitle text-muted mb-2">Recomendação</h6>
+            <p class="mb-0">{{ gap.recommendation|default:"-"|linebreaksbr }}</p>
+        </div></div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h6 class="card-title">Fonte de Log</h6><p class="mb-0">{{ gap.log_source|default:"-" }}</p></div></div></div>
+    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h6 class="card-title">Caso de Uso</h6><p class="mb-0">{{ gap.use_case|default:"-" }}</p></div></div></div>
+    <div class="col-md-4"><div class="card h-100"><div class="card-body"><h6 class="card-title">Regra</h6><p class="mb-0">{% if gap.rule %}<a href="{% url 'detections:rule_detail' pk=gap.rule.pk %}">{{ gap.rule }}</a>{% else %}-{% endif %}</p></div></div></div>
+</div>
+
+{% if gap.notes %}
+<div class="card mb-4"><div class="card-body">
+    <h6 class="card-subtitle text-muted mb-2">Observações</h6>
+    <p class="mb-0">{{ gap.notes|linebreaksbr }}</p>
+</div></div>
+{% endif %}
+
+{% if audit_entries is not None %}
+<div class="card">
+    <div class="card-body">
+        <h6 class="card-title">Últimas alterações</h6>
+        <ul class="list-unstyled mb-0 small">
+            {% for entry in audit_entries %}
+            <li class="mb-1">
+                <span class="text-muted">{{ entry.timestamp|date:"d/m/Y H:i" }}</span> —
+                {{ entry.user|default:"Sistema" }}
+                <span class="badge {% if entry.action == 'CREATE' %}bg-success{% elif entry.action == 'DELETE' %}bg-danger{% else %}bg-primary{% endif %}">{{ entry.get_action_display }}</span>
+                {{ entry.changes|audit_changes }}
+            </li>
+            {% empty %}
+            <li class="text-muted">Nenhuma alteração registrada ainda.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

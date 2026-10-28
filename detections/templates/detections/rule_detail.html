@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% load audit_extras %}
+{% block title %}{{ rule.internal_id }} - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-0">{{ rule.internal_id }} - {{ rule.name }}</h2>
+        <small class="text-muted">{{ rule.client }} · {{ rule.technology }}</small>
+    </div>
+    <div>
+        <a href="{% url 'detections:rule_list' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Voltar</a>
+        {% if perms.detections.change_rule %}<a href="{% url 'detections:rule_update' pk=rule.pk %}" class="btn btn-primary"><i class="bi bi-pencil"></i> Editar</a>{% endif %}
+    </div>
+</div>
+
+{% if is_possibly_inoperative %}
+<div class="alert alert-danger"><strong>Atenção:</strong> detecção possivelmente inoperante — a regra está ativa, mas a fonte de log do cliente não está recebendo eventos (ou não está integrada).</div>
+{% endif %}
+{% if is_review_overdue %}
+<div class="alert alert-warning"><strong>Revisão pendente:</strong> a próxima revisão ({{ rule.next_review_at|date:"d/m/Y" }}) já passou.</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6 class="card-subtitle text-muted mb-2">Status</h6>{% if rule.status %}<span class="badge" style="background-color: {{ rule.status.color|default:'#6c757d' }};">{{ rule.status.name }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6 class="card-subtitle text-muted mb-2">Severidade SOC</h6>{% if rule.severity %}<span class="badge" style="background-color: {{ rule.severity.color|default:'#6c757d' }};">{{ rule.severity.name }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6 class="card-subtitle text-muted mb-2">Nível original</h6>{{ rule.original_level|default:"-" }}</div></div></div>
+    <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6 class="card-subtitle text-muted mb-2">Tipo</h6>{{ rule.rule_type|default:"-" }}</div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="card-subtitle text-muted mb-2">Descrição</h6>
+            <p>{{ rule.description|default:"-"|linebreaksbr }}</p>
+            <h6 class="card-subtitle text-muted mb-2">Objetivo</h6>
+            <p>{{ rule.objective|default:"-"|linebreaksbr }}</p>
+            <h6 class="card-subtitle text-muted mb-2">O que protege</h6>
+            <p>{{ rule.protects|default:"-"|linebreaksbr }}</p>
+            <h6 class="card-subtitle text-muted mb-2">Ameaça</h6>
+            <p class="mb-0">{{ rule.threat|default:"-" }}</p>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="card-subtitle text-muted mb-2">Fonte de Log</h6>
+            <p>{{ rule.log_source|default:"-" }}</p>
+            <h6 class="card-subtitle text-muted mb-2">ID na ferramenta</h6>
+            <p>{{ rule.vendor_rule_id|default:"-" }}</p>
+            <h6 class="card-subtitle text-muted mb-2">Categoria</h6>
+            <p>{{ rule.category|default:"-" }}</p>
+            <h6 class="card-subtitle text-muted mb-2">Revisão</h6>
+            <p class="mb-0">Última: {{ rule.last_reviewed_at|date:"d/m/Y"|default:"-" }} · Próxima: {{ rule.next_review_at|date:"d/m/Y"|default:"-" }}</p>
+        </div></div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="card-title">Casos de Uso</h6>
+            {% for uc in rule.use_cases.all %}<span class="badge badge-neutral">{{ uc.code }}</span> {% empty %}<span class="text-muted">Nenhum</span>{% endfor %}
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="card-title">MITRE / Técnicas</h6>
+            {% for fc in rule.framework_controls.all %}<span class="badge badge-neutral">{{ fc.code }}</span> {% empty %}<span class="text-muted">Nenhuma</span>{% endfor %}
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="card-title">Tags</h6>
+            {% for tag in rule.tags.all %}<span class="badge badge-neutral">{{ tag.name }}</span> {% empty %}<span class="text-muted">Nenhuma</span>{% endfor %}
+        </div></div>
+    </div>
+</div>
+
+{% if rule.notes %}
+<div class="card mb-4"><div class="card-body">
+    <h6 class="card-subtitle text-muted mb-2">Observações</h6>
+    <p class="mb-0">{{ rule.notes|linebreaksbr }}</p>
+</div></div>
+{% endif %}
+
+{% if audit_entries is not None %}
+<div class="card">
+    <div class="card-body">
+        <h6 class="card-title">Últimas alterações</h6>
+        <ul class="list-unstyled mb-0 small">
+            {% for entry in audit_entries %}
+            <li class="mb-1">
+                <span class="text-muted">{{ entry.timestamp|date:"d/m/Y H:i" }}</span> —
+                {{ entry.user|default:"Sistema" }}
+                <span class="badge {% if entry.action == 'CREATE' %}bg-success{% elif entry.action == 'DELETE' %}bg-danger{% else %}bg-primary{% endif %}">{{ entry.get_action_display }}</span>
+                {{ entry.changes|audit_changes }}
+            </li>
+            {% empty %}
+            <li class="text-muted">Nenhuma alteração registrada ainda.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

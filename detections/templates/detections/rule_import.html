@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Importar Regras - SOC Control{% endblock %}
+{% block content %}
+<h2>Importar Regras via CSV</h2>
+<div class="card shadow-sm p-4 mb-4" style="max-width: 720px;">
+    <p>
+        Colunas obrigatórias: <code>rule_id</code>, <code>name</code>, <code>client</code>,
+        <code>technology</code>. Opcionais: <code>log_source</code>, <code>level</code>,
+        <code>severity</code>, <code>status</code>, <code>description</code>.
+    </p>
+    <p class="text-muted small">
+        O cliente e a tecnologia devem já existir no sistema (associação por nome exato,
+        sem diferenciar maiúsculas/minúsculas). Regras já existentes (mesmo <code>rule_id</code>)
+        são atualizadas; as demais são criadas.
+    </p>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {% for field in form %}
+        <div class="mb-3">
+            <label class="form-label">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">Importar</button>
+        <a href="{% url 'detections:rule_list' %}" class="btn btn-outline-secondary">Voltar</a>
+    </form>
+</div>
+
+{% if report %}
+<div class="card shadow-sm" style="max-width: 720px;">
+    <div class="card-body">
+        <h5>Resultado</h5>
+        <p>Criadas: <strong>{{ report.created }}</strong> · Atualizadas: <strong>{{ report.updated }}</strong></p>
+        {% if report.warnings %}
+        <h6 class="text-warning">Avisos</h6>
+        <ul>{% for w in report.warnings %}<li>Linha {{ w.row }}: {{ w.message }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if report.errors %}
+        <h6 class="text-danger">Erros</h6>
+        <ul>{% for e in report.errors %}<li>Linha {{ e.row }}: {{ e.message }}</li>{% endfor %}</ul>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

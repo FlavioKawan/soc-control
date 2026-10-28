@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Fonte de Log - {{ template.name }} - SOC Control{% endblock %}
+{% block content %}
+<h2>Adicionar Fonte de Log - {{ template.name }}</h2>
+<form method="post" class="card p-4" style="max-width: 640px;">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="mb-3">
+        <label class="form-label">{{ field.label }}</label>
+        {{ field }}
+        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{% url 'catalog:template_detail' pk=template.pk %}" class="btn btn-outline-secondary">Cancelar</a>
+</form>
+{% endblock %}

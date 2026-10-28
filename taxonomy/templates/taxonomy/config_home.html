@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Configurações - SOC Control{% endblock %}
+{% block content %}
+<h2>Configurações</h2>
+<p class="text-muted">Catálogos usados em todo o sistema. Apenas administradores podem alterá-los.</p>
+<div class="row g-3">
+    {% for card in cards %}
+    <div class="col-md-4 col-sm-6">
+        <a href="{% url 'taxonomy:catalog_list' catalog=card.key %}" class="card text-decoration-none h-100">
+            <div class="card-body">
+                <i class="bi {{ card.icon }} fs-3" style="color: var(--scv-accent);"></i>
+                <h5 class="card-title mt-3 mb-1">{{ card.label }} <span class="badge badge-neutral">{{ card.count }}</span></h5>
+                <p class="card-text text-muted small mb-0">{{ card.description|truncatewords:18 }}</p>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+    {% if show_frameworks %}
+    <div class="col-md-4 col-sm-6">
+        <a href="{% url 'taxonomy:framework_list' %}" class="card text-decoration-none h-100">
+            <div class="card-body">
+                <i class="bi bi-diagram-3 fs-3" style="color: var(--scv-accent);"></i>
+                <h5 class="card-title mt-3 mb-1">Frameworks <span class="badge badge-neutral">{{ frameworks_count }}</span></h5>
+                <p class="card-text text-muted small mb-0">Modelos de referência externos (MITRE ATT&CK, Cyber Kill Chain...). Regras e Casos de Uso podem ser marcados com uma ou mais técnicas/etapas.</p>
+            </div>
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% if not cards and not show_frameworks %}
+<div class="alert alert-warning mt-3">Você não tem permissão para visualizar nenhum catálogo.</div>
+{% endif %}
+{% endblock %}

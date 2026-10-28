@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Templates de Implementação - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Templates de Implementação</h2>
+    {% if perms.catalog.add_implementationtemplate %}
+    <a href="{% url 'catalog:template_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo Template</a>
+    {% endif %}
+</div>
+<p class="text-muted">
+    Um template agrupa fontes de log e casos de uso que costumam ser
+    implantados juntos (ex: "Windows Server"). Aplicar um template a um
+    cliente cria as associações que ainda não existirem.
+</p>
+<table class="table table-striped shadow-sm">
+    <thead><tr><th>Nome</th><th>Fontes de Log</th><th>Casos de Uso</th><th>Ativo</th><th class="text-end">Ações</th></tr></thead>
+    <tbody>
+        {% for t in templates %}
+        <tr>
+            <td><a href="{% url 'catalog:template_detail' pk=t.pk %}">{{ t.name }}</a></td>
+            <td>{{ t.log_sources.count }}</td>
+            <td>{{ t.use_cases.count }}</td>
+            <td>{% if t.is_active %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}</td>
+            <td class="text-end">
+                {% if perms.catalog.change_implementationtemplate %}<a href="{% url 'catalog:template_update' pk=t.pk %}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>{% endif %}
+                {% if perms.catalog.delete_implementationtemplate %}<a href="{% url 'catalog:template_delete' pk=t.pk %}" class="btn btn-sm btn-outline-danger" title="Excluir"><i class="bi bi-trash"></i></a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">Nenhum template cadastrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

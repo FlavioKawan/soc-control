@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Busca - SOC Control{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+    <h2>Busca</h2>
+    <form method="get" class="d-flex gap-2" style="max-width: 480px;">
+        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar cliente, regra, gap, caso de uso, fonte de log..." autofocus>
+        <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
+    </form>
+</div>
+
+{% if not query %}
+<p class="text-muted">Digite um termo para buscar em clientes, regras, gaps, casos de uso e fontes de log ao mesmo tempo.</p>
+{% elif not has_results %}
+<p class="text-muted">Nenhum resultado para "<strong>{{ query }}</strong>".</p>
+{% else %}
+
+<div class="row g-3">
+    {% for category in categories %}
+    {% if category.total %}
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi {{ category.icon }}"></i> {{ category.label }}</span>
+                <span class="badge bg-secondary">{{ category.total }}</span>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for item in category.items %}
+                <a href="{{ item.url }}" class="list-group-item list-group-item-action">
+                    <div>{{ item.title }}</div>
+                    {% if item.subtitle %}<div class="text-muted small">{{ item.subtitle }}</div>{% endif %}
+                </a>
+                {% endfor %}
+            </div>
+            {% if category.total > category.items|length %}
+            <div class="card-footer text-end">
+                <a href="{{ category.see_all_url }}" class="small">Ver todos os {{ category.total }} resultados <i class="bi bi-arrow-right"></i></a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+
+{% endif %}
+{% endblock %}

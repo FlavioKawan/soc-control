@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - SOC Control{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <h2>Dashboard</h2>
+    <form method="get" class="d-flex gap-2">
+        <select name="client" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">Todos os clientes</option>
+            {% for c in clients %}<option value="{{ c.pk }}" {% if selected_client and selected_client.pk == c.pk %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </select>
+        <select name="technology" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="">Todas as tecnologias</option>
+            {% for t in technologies %}<option value="{{ t.pk }}" {% if selected_technology and selected_technology.pk == t.pk %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+        </select>
+        {% if selected_client or selected_technology %}<a href="{% url 'dashboard' %}" class="btn btn-sm btn-outline-secondary">Limpar</a>{% endif %}
+    </form>
+</div>
+
+<!-- Fluxo recomendado / onboarding -->
+<div class="card mb-4">
+    <div class="card-body">
+        {% if is_new_setup %}
+        <h5 class="mb-1"><i class="bi bi-rocket-takeoff" style="color: var(--scv-accent);"></i> Primeiros passos</h5>
+        <p class="text-muted small mb-3">
+            Ainda não há dados suficientes para o dashboard tomar forma. Siga esta ordem para cadastrar —
+            cada etapa depende da anterior existir no catálogo.
+        </p>
+        {% else %}
+        <button class="btn btn-link p-0 text-decoration-none mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#onboardingSteps">
+            <i class="bi bi-signpost-2"></i> Fluxo recomendado de cadastro <i class="bi bi-chevron-down small"></i>
+        </button>
+        <div class="collapse" id="onboardingSteps">
+        {% endif %}
+
+        <div class="row g-3 onboarding-steps">
+            <div class="col-md-3 col-6">
+                <a href="{% url 'taxonomy:config_home' %}" class="text-decoration-none">
+                    <div class="step-badge">1</div>
+                    <strong>Configurações</strong>
+                    <p class="text-muted small mb-0">Crie ao menos um Status, Severidade, Categoria e Tecnologia. Tudo aqui é a base de todo o resto.</p>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{% url 'clients:client_list' %}" class="text-decoration-none">
+                    <div class="step-badge">2</div>
+                    <strong>Clientes</strong>
+                    <p class="text-muted small mb-0">Cadastre o cliente que você monitora.</p>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{% url 'catalog:logsource_list' %}" class="text-decoration-none">
+                    <div class="step-badge">3</div>
+                    <strong>Fontes de Log</strong>
+                    <p class="text-muted small mb-0">Catálogo global (ex: Windows Security). Depois associe ao cliente na página dele.</p>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{% url 'catalog:usecase_list' %}" class="text-decoration-none">
+                    <div class="step-badge">4</div>
+                    <strong>Casos de Uso</strong>
+                    <p class="text-muted small mb-0">Catálogo global (ex: UC-001 Brute Force). Depois associe ao cliente, ou use um Template.</p>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{% url 'catalog:template_list' %}" class="text-decoration-none">
+                    <div class="step-badge">5</div>
+                    <strong>Templates <span class="text-muted">(opcional)</span></strong>
+                    <p class="text-muted small mb-0">Agrupe fontes + casos de uso comuns (ex: "Windows Server") e aplique de uma vez a um cliente.</p>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{% url 'detections:rule_list' %}" class="text-decoration-none">
+                    <div class="step-badge">6</div>
+                    <strong>Regras</strong>
+                    <p class="text-muted small mb-0">O inventário principal: ligue cada regra ao cliente, à fonte de log e aos casos de uso que ela cobre.</p>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <a href="{% url 'gaps:gap_list' %}" class="text-decoration-none">
+                    <div class="step-badge">7</div>
+                    <strong>Gaps</strong>
+                    <p class="text-muted small mb-0">Registre lacunas percebidas (fonte sem log, caso de uso sem regra, etc.).</p>
+                </a>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="step-badge" style="background: var(--scv-text-muted);">i</div>
+                <strong>Dica</strong>
+                <p class="text-muted small mb-0">Este dashboard e os badges de alerta ("revisão pendente", "possivelmente inoperante") só ganham sentido depois do passo 6.</p>
+            </div>
+        </div>
+        {% if not is_new_setup %}</div>{% endif %}
+    </div>
+</div>
+
+{% if kill_chain %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="mb-1"><i class="bi bi-diagram-3" style="color: var(--scv-accent);"></i> Cyber Kill Chain</h5>
+        <p class="text-muted small mb-3">Quantas regras (do filtro atual) cobrem cada etapa de um ataque. Clique numa etapa para ver as regras.</p>
+        <div class="kill-chain">
+            {% for stage in kill_chain %}
+            <a href="{{ stage.url }}" class="kill-chain-stage {% if not stage.count %}kill-chain-stage-empty{% endif %}" title="{{ stage.description }}">
+                <div class="kill-chain-count">{{ stage.count }}</div>
+                <div class="kill-chain-name">{{ stage.name }}</div>
+            </a>
+            {% if not forloop.last %}<div class="kill-chain-arrow"><i class="bi bi-chevron-right"></i></div>{% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-light border d-flex justify-content-between align-items-center mb-4">
+    <span><i class="bi bi-diagram-3"></i> A visualização da Cyber Kill Chain ainda não foi configurada.</span>
+    <code class="small">python manage.py seed_kill_chain</code>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value">{{ cards.total_rules }}</div><div class="stat-label">Regras</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-success">{{ cards.active_rules }}</div><div class="stat-label">Ativas</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-warning">{{ cards.testing_rules }}</div><div class="stat-label">Em teste</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-info">{{ cards.review_rules }}</div><div class="stat-label">Em revisão</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-muted">{{ cards.inactive_rules }}</div><div class="stat-label">Desativadas</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-danger">{{ cards.reviews_pending }}</div><div class="stat-label">Revisão pendente</div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value">{{ cards.total_use_cases }}</div><div class="stat-label">Casos de uso</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-success">{{ cards.covered_use_cases }}</div><div class="stat-label">Cobertos</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-warning">{{ cards.partial_use_cases }}</div><div class="stat-label">Parciais</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-danger">{{ cards.not_covered_use_cases }}</div><div class="stat-label">Não cobertos</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value">{{ cards.gaps_open }} / {{ cards.gaps_total }}</div><div class="stat-label">Gaps (abertos/total)</div></div></div>
+    <div class="col-6 col-md-2"><div class="stat-card"><div class="stat-value text-danger">{{ cards.log_sources_without_data }}</div><div class="stat-label">Fontes sem log</div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="text-muted text-uppercase small fw-bold">Regras por status</h6>
+            <div class="chart-box"><canvas id="chartRulesByStatus"></canvas></div>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="text-muted text-uppercase small fw-bold">Regras por severidade</h6>
+            <div class="chart-box"><canvas id="chartRulesBySeverity"></canvas></div>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="text-muted text-uppercase small fw-bold">Regras por tecnologia</h6>
+            <div class="chart-box"><canvas id="chartRulesByTechnology"></canvas></div>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="text-muted text-uppercase small fw-bold">Cobertura dos casos de uso</h6>
+            <div class="chart-box"><canvas id="chartCoverage"></canvas></div>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="text-muted text-uppercase small fw-bold">Casos de uso por categoria</h6>
+            <div class="chart-box"><canvas id="chartUseCasesByCategory"></canvas></div>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h6 class="text-muted text-uppercase small fw-bold">Gaps por criticidade</h6>
+            <div class="chart-box"><canvas id="chartGapsByCriticality"></canvas></div>
+        </div></div>
+    </div>
+</div>
+
+{% if charts.top_threats %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h6 class="text-muted text-uppercase small fw-bold">O que estamos protegendo &mdash; principais ameaças cobertas</h6>
+        {% for item in charts.top_threats %}
+        <div class="threat-row">
+            <span class="threat-dot" style="background-color: {{ item.color }};"></span>
+            <span class="threat-label">{{ item.label }}</span>
+            <span class="threat-bar-track">
+                <span class="threat-bar" style="width: {% widthratio item.value charts.top_threats.0.value 100 %}%; background-color: {{ item.color }};"></span>
+            </span>
+            <span class="threat-value">{{ item.value }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{{ charts.rules_by_status|json_script:"data-rules-status" }}
+{{ charts.rules_by_severity|json_script:"data-rules-severity" }}
+{{ charts.rules_by_technology|json_script:"data-rules-technology" }}
+{{ charts.coverage|json_script:"data-coverage" }}
+{{ charts.usecases_by_category|json_script:"data-usecases-category" }}
+{{ charts.gaps_by_criticality|json_script:"data-gaps-criticality" }}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    var isDark = document.documentElement.getAttribute("data-bs-theme") === "dark";
+    Chart.defaults.color = isDark ? "#98a2b8" : "#6b7280";
+    Chart.defaults.borderColor = isDark ? "#2a3142" : "#e3e5ec";
+
+    function readData(id) {
+        const el = document.getElementById(id);
+        return el ? JSON.parse(el.textContent) : [];
+    }
+
+    function renderChart(canvasId, dataId, type) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const rows = readData(dataId);
+        if (!rows.length) {
+            canvas.replaceWith(Object.assign(document.createElement("p"), {
+                className: "text-muted small mb-0", textContent: "Sem dados para este filtro."
+            }));
+            return;
+        }
+        new Chart(canvas.getContext("2d"), {
+            type: type,
+            data: {
+                labels: rows.map(r => r.label),
+                datasets: [{
+                    data: rows.map(r => r.value),
+                    backgroundColor: rows.map(r => r.color),
+                    borderWidth: type === "bar" ? 0 : 2,
+                    borderColor: isDark ? "#161b26" : "#fff",
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: type !== "bar", position: "right", labels: { boxWidth: 12, font: { size: 11 } } } },
+                scales: type === "bar" ? { y: { beginAtZero: true, ticks: { precision: 0 } } } : {},
+            },
+        });
+    }
+
+    renderChart("chartRulesByStatus", "data-rules-status", "doughnut");
+    renderChart("chartRulesBySeverity", "data-rules-severity", "doughnut");
+    renderChart("chartRulesByTechnology", "data-rules-technology", "bar");
+    renderChart("chartCoverage", "data-coverage", "doughnut");
+    renderChart("chartUseCasesByCategory", "data-usecases-category", "bar");
+    renderChart("chartGapsByCriticality", "data-gaps-criticality", "bar");
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Excluir Usuário - SOC Control{% endblock %}
+{% block content %}
+<h2>Excluir Usuário</h2>
+<div class="card shadow-sm" style="max-width: 480px;">
+    <div class="card-body">
+        <p>Confirma a exclusão de <strong>{{ object.username }}</strong>?</p>
+        <p class="text-muted small">
+            O histórico (Auditoria) já registrado por este usuário é
+            preservado, mas passa a aparecer sem usuário associado. Para só
+            bloquear o acesso sem perder essa referência, prefira editar o
+            usuário e desmarcar "Ativo".
+        </p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Excluir</button>
+            <a href="{% url 'user_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ template.name }} - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>{{ template.name }}</h2>
+    <a href="{% url 'catalog:template_list' %}" class="btn btn-outline-secondary">Voltar</a>
+</div>
+<p>{{ template.description|default:"" }}</p>
+
+<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+    <h4>Fontes de Log</h4>
+    {% if can_manage %}
+    <a href="{% url 'catalog:templatelogsource_create' template_pk=template.pk %}" class="btn btn-primary btn-sm">Adicionar</a>
+    {% endif %}
+</div>
+<table class="table table-striped shadow-sm mb-4">
+    <thead><tr><th>Fonte de Log</th><th class="text-end">Ações</th></tr></thead>
+    <tbody>
+        {% for item in log_source_items %}
+        <tr>
+            <td>{{ item.log_source.name }}</td>
+            <td class="text-end">
+                {% if perms.catalog.delete_templatelogsource %}<a href="{% url 'catalog:templatelogsource_delete' pk=item.pk %}" class="btn btn-sm btn-outline-danger">Remover</a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" class="text-muted">Nenhuma fonte de log neste template.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h4>Casos de Uso</h4>
+    {% if can_manage %}
+    <a href="{% url 'catalog:templateusecase_create' template_pk=template.pk %}" class="btn btn-primary btn-sm">Adicionar</a>
+    {% endif %}
+</div>
+<table class="table table-striped shadow-sm">
+    <thead><tr><th>Caso de Uso</th><th>Criticidade padrão</th><th class="text-end">Ações</th></tr></thead>
+    <tbody>
+        {% for item in use_case_items %}
+        <tr>
+            <td>{{ item.use_case }}</td>
+            <td>{{ item.default_criticality|default:"-" }}</td>
+            <td class="text-end">
+                {% if perms.catalog.delete_templateusecase %}<a href="{% url 'catalog:templateusecase_delete' pk=item.pk %}" class="btn btn-sm btn-outline-danger">Remover</a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-muted">Nenhum caso de uso neste template.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

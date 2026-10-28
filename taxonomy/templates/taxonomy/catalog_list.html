@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load taxonomy_extras %}
+{% block title %}{{ label }} - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>{{ label }}</h2>
+    <div>
+        <a href="{% url 'taxonomy:config_home' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Voltar</a>
+        {% if can_add %}
+        <a href="{% url 'taxonomy:catalog_create' catalog=catalog_key %}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo</a>
+        {% endif %}
+    </div>
+</div>
+{% if description %}<p class="text-muted">{{ description }}</p>{% endif %}
+<table class="table table-striped shadow-sm">
+    <thead>
+        <tr>
+            {% for field, header in list_fields %}<th>{{ header }}</th>{% endfor %}
+            <th class="text-end">Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for obj in objects %}
+        <tr>
+            {% for field, header in list_fields %}
+                <td>
+                    {% if field == 'is_active' %}
+                        {% if obj.is_active %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}
+                    {% elif field == 'is_client' %}
+                        {% if obj.is_client %}<span class="badge bg-info text-dark">Sim</span>{% else %}<span class="text-muted">—</span>{% endif %}
+                    {% elif field == 'color' and obj.color %}
+                        <span class="badge" style="background-color: {{ obj.color }};">{{ obj.color }}</span>
+                    {% else %}
+                        {{ obj|getattribute:field }}
+                    {% endif %}
+                </td>
+            {% endfor %}
+            <td class="text-end">
+                {% if can_change %}<a href="{% url 'taxonomy:catalog_update' catalog=catalog_key pk=obj.pk %}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>{% endif %}
+                {% if can_delete %}<a href="{% url 'taxonomy:catalog_delete' catalog=catalog_key pk=obj.pk %}" class="btn btn-sm btn-outline-danger" title="Excluir"><i class="bi bi-trash"></i></a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{{ list_fields|length|add:1 }}" class="text-muted">Nenhum registro cadastrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Excluir {{ label }} - SOC Control{% endblock %}
+{% block content %}
+<h2>Excluir {{ label }}</h2>
+<div class="card shadow-sm" style="max-width: 480px;">
+    <div class="card-body">
+        <p>Confirma a exclusão de <strong>{{ object }}</strong>?</p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Excluir</button>
+            <a href="{% url 'taxonomy:catalog_list' catalog=catalog_key %}" class="btn btn-outline-secondary">Cancelar</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

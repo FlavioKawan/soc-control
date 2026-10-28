@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Casos de Uso - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Casos de Uso (catálogo global)</h2>
+    {% if can_add %}
+    <a href="{% url 'catalog:usecase_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo Caso de Uso</a>
+    {% endif %}
+</div>
+<p class="text-muted">
+    O cenário de detecção em si (ex: "UC-001 Brute Force"), independente de
+    tecnologia — existe uma vez só aqui. Não diz se um cliente está
+    protegido (isso fica na aba "Casos de Uso" da página do cliente) nem
+    qual regra técnica faz a detecção (isso é <a href="{% url 'detections:rule_list' %}">Regra</a>).
+</p>
+
+<form method="get" class="mb-3 d-flex gap-2" style="max-width: 400px;">
+    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar por código ou nome...">
+    <button type="submit" class="btn btn-outline-secondary"><i class="bi bi-search"></i></button>
+</form>
+
+<table class="table table-striped shadow-sm">
+    <thead><tr><th>Código</th><th>Nome</th><th>Categoria</th><th>Tags</th><th>Ativo</th><th class="text-end">Ações</th></tr></thead>
+    <tbody>
+        {% for uc in use_cases %}
+        <tr>
+            <td>{{ uc.code }}</td>
+            <td>{{ uc.name }}</td>
+            <td>{{ uc.category|default:"-" }}</td>
+            <td>{% for tag in uc.tags.all %}<span class="badge badge-neutral">{{ tag.name }}</span> {% endfor %}</td>
+            <td>{% if uc.is_active %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}</td>
+            <td class="text-end">
+                {% if can_change %}<a href="{% url 'catalog:usecase_update' pk=uc.pk %}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>{% endif %}
+                {% if can_delete %}<a href="{% url 'catalog:usecase_delete' pk=uc.pk %}" class="btn btn-sm btn-outline-danger" title="Excluir"><i class="bi bi-trash"></i></a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-muted">Nenhum caso de uso cadastrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

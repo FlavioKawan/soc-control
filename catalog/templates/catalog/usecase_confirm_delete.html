@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Excluir Caso de Uso - SOC Control{% endblock %}
+{% block content %}
+<h2>Excluir Caso de Uso</h2>
+<div class="card shadow-sm" style="max-width: 480px;">
+    <div class="card-body">
+        <p>Confirma a exclusão de <strong>{{ object }}</strong>?</p>
+        <p class="text-muted small">
+            Se algum cliente já tiver esse caso de uso associado, a exclusão
+            será bloqueada para preservar o histórico.
+        </p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Excluir</button>
+            <a href="{% url 'catalog:usecase_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

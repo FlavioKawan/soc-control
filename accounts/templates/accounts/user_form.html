@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{% if object %}Editar{% else %}Novo{% endif %} Usuário - SOC Control{% endblock %}
+{% block content %}
+<h2>{% if object %}Editar{% else %}Novo{% endif %} Usuário</h2>
+<form method="post" class="card p-4" style="max-width: 640px;">
+    {% csrf_token %}
+    {% for field in form %}
+        {% if field.name != "groups" %}
+        <div class="mb-3">
+            <label class="form-label">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+            {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        {% endif %}
+    {% endfor %}
+    <div class="mb-3">
+        <label class="form-label">{{ form.groups.label }}</label>
+        {% for checkbox in form.groups %}
+        <div class="form-check">{{ checkbox.tag }} <label class="form-check-label">{{ checkbox.choice_label }}</label></div>
+        {% endfor %}
+        {% if form.groups.help_text %}<div class="form-text">{{ form.groups.help_text }}</div>{% endif %}
+        {% for error in form.groups.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{% url 'user_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+</form>
+{% endblock %}

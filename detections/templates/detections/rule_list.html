@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Regras - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Regras</h2>
+    <div>
+        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#columnsModal"><i class="bi bi-columns-gap"></i> Configurar colunas</button>
+        {% if can_import %}<a href="{% url 'detections:rule_import' %}" class="btn btn-outline-secondary"><i class="bi bi-upload"></i> Importar CSV</a>{% endif %}
+        {% if can_add %}<a href="{% url 'detections:rule_create' %}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nova Regra</a>{% endif %}
+    </div>
+</div>
+<p class="text-muted">
+    O inventário técnico: cada regra é a implementação real de detecção,
+    sempre ligada a um cliente e uma tecnologia. Para saber apenas <em>se</em>
+    uma ameaça está coberta (sem entrar em qual ferramenta faz isso), veja
+    <a href="{% url 'catalog:usecase_list' %}">Casos de Uso</a>.
+</p>
+
+{% if active_stage %}
+<div class="alert alert-primary d-flex justify-content-between align-items-center py-2">
+    <span><i class="bi bi-diagram-3"></i> Etapa da Kill Chain: <strong>{{ active_stage.code }} &middot; {{ active_stage.name }}</strong></span>
+    <a href="{% url 'detections:rule_list' %}" class="btn btn-sm btn-outline-primary">Limpar</a>
+</div>
+{% endif %}
+
+<form method="get" class="mb-3">
+    <div class="d-flex gap-2 mb-2">
+        <div class="flex-grow-1" style="max-width: 420px;">{{ filter_form.q }}</div>
+        <button type="submit" class="btn btn-primary text-nowrap"><i class="bi bi-search"></i> Buscar</button>
+        <button type="button" class="btn btn-outline-secondary text-nowrap sidebar-toggle" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="{% if has_advanced_filters %}true{% else %}false{% endif %}">
+            <i class="bi bi-funnel"></i> Filtros avançados <i class="bi bi-chevron-down sidebar-chevron"></i>
+        </button>
+        {% if has_advanced_filters or filter_form.q.value %}
+        <a href="{% url 'detections:rule_list' %}" class="btn btn-outline-secondary text-nowrap"><i class="bi bi-x-lg"></i> Limpar filtros</a>
+        {% endif %}
+    </div>
+    <div class="collapse {% if has_advanced_filters %}show{% endif %}" id="advancedFilters">
+        <div class="card shadow-sm p-3">
+            <div class="row g-2">
+                <div class="col-md-3">{{ filter_form.client.label_tag }}{{ filter_form.client }}</div>
+                <div class="col-md-3">{{ filter_form.technology.label_tag }}{{ filter_form.technology }}</div>
+                <div class="col-md-3">{{ filter_form.status.label_tag }}{{ filter_form.status }}</div>
+                <div class="col-md-3">{{ filter_form.severity.label_tag }}{{ filter_form.severity }}</div>
+                <div class="col-md-3">{{ filter_form.log_source.label_tag }}{{ filter_form.log_source }}</div>
+                <div class="col-md-3">{{ filter_form.use_case.label_tag }}{{ filter_form.use_case }}</div>
+                <div class="col-md-3">{{ filter_form.category.label_tag }}{{ filter_form.category }}</div>
+                <div class="col-md-3">{{ filter_form.framework.label_tag }}{{ filter_form.framework }}</div>
+                <div class="col-md-3">{{ filter_form.tag.label_tag }}{{ filter_form.tag }}</div>
+                <div class="col-md-3">{{ filter_form.review_status.label_tag }}{{ filter_form.review_status }}</div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check2"></i> Aplicar filtros</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<table class="table table-striped shadow-sm">
+    <thead>
+        <tr>
+            {% for key, header in available_columns %}
+                {% if key in visible_columns %}<th>{{ header }}</th>{% endif %}
+            {% endfor %}
+            <th>Alertas</th>
+            <th class="text-end">Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for rule in rules %}
+        <tr>
+            {% for key, header in available_columns %}
+                {% if key in visible_columns %}
+                <td>
+                    {% if key == "internal_id" %}<a href="{% url 'detections:rule_detail' pk=rule.pk %}">{{ rule.internal_id }}</a>
+                    {% elif key == "name" %}{{ rule.name }}
+                    {% elif key == "client" %}{{ rule.client }}
+                    {% elif key == "technology" %}{{ rule.technology }}
+                    {% elif key == "severity" %}{% if rule.severity %}<span class="badge" style="background-color: {{ rule.severity.color|default:'#6c757d' }};">{{ rule.severity.name }}</span>{% else %}-{% endif %}
+                    {% elif key == "status" %}{% if rule.status %}<span class="badge" style="background-color: {{ rule.status.color|default:'#6c757d' }};">{{ rule.status.name }}</span>{% else %}-{% endif %}
+                    {% elif key == "log_source" %}{{ rule.log_source|default:"-" }}
+                    {% elif key == "rule_type" %}{{ rule.rule_type|default:"-" }}
+                    {% elif key == "vendor_rule_id" %}{{ rule.vendor_rule_id|default:"-" }}
+                    {% elif key == "mitre" %}{% for fc in rule.framework_controls.all %}<span class="badge badge-neutral">{{ fc.code }}</span> {% empty %}-{% endfor %}
+                    {% elif key == "last_reviewed_at" %}{{ rule.last_reviewed_at|date:"d/m/Y"|default:"-" }}
+                    {% elif key == "next_review_at" %}{{ rule.next_review_at|date:"d/m/Y"|default:"-" }}
+                    {% endif %}
+                </td>
+                {% endif %}
+            {% endfor %}
+            <td>
+                {% if rule.is_possibly_inoperative %}<span class="badge bg-danger">Possivelmente inoperante</span>{% endif %}
+                {% if rule.is_review_overdue %}<span class="badge bg-warning text-dark">Revisão pendente</span>{% endif %}
+            </td>
+            <td class="text-end">
+                {% if can_change %}<a href="{% url 'detections:rule_update' pk=rule.pk %}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>{% endif %}
+                {% if can_delete %}<a href="{% url 'detections:rule_delete' pk=rule.pk %}" class="btn btn-sm btn-outline-danger" title="Excluir"><i class="bi bi-trash"></i></a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{{ visible_columns|length|add:2 }}" class="text-muted">Nenhuma regra encontrada.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+<nav>
+    <ul class="pagination">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.previous_page_number %}">Anterior</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?{% querystring page=page_obj.next_page_number %}">Próxima</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<div class="modal fade" id="columnsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{% url 'detections:rule_columns' %}" class="modal-content">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <div class="modal-header">
+                <h5 class="modal-title">Configurar colunas</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% for checkbox in column_form.columns %}
+                <div class="form-check">{{ checkbox.tag }} <label class="form-check-label">{{ checkbox.choice_label }}</label></div>
+                {% endfor %}
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check2"></i> Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

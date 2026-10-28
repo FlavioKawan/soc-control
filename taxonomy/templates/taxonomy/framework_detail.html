@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ framework.name }} - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>{{ framework.name }} <small class="text-muted">{{ framework.version }}</small></h2>
+    <a href="{% url 'taxonomy:framework_list' %}" class="btn btn-outline-secondary">Voltar</a>
+</div>
+<p>{{ framework.description|default:"" }}</p>
+
+<form method="get" action="{% url 'taxonomy:framework_navigator_export' pk=framework.pk %}" class="d-flex gap-2 align-items-center mb-4">
+    <select name="client" class="form-select form-select-sm" style="max-width: 220px;">
+        <option value="">Todos os clientes</option>
+        {% for c in all_clients %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap">
+        <i class="bi bi-download"></i> Exportar camada ATT&amp;CK Navigator (JSON)
+    </button>
+    <span class="text-muted small">Pontuação = quantas regras cobrem cada código, importável direto no <a href="https://mitre-attack.github.io/attack-navigator/" target="_blank" rel="noopener">MITRE ATT&amp;CK Navigator</a>.</span>
+</form>
+
+<div class="d-flex justify-content-between align-items-center mt-4 mb-2">
+    <h4>Controles / Técnicas</h4>
+    {% if can_manage_controls %}
+    <a href="{% url 'taxonomy:frameworkcontrol_create' framework_pk=framework.pk %}" class="btn btn-primary btn-sm">Novo controle</a>
+    {% endif %}
+</div>
+<table class="table table-striped shadow-sm">
+    <thead><tr><th>Código</th><th>Nome</th><th>Pai</th><th>Ativo</th><th class="text-end">Ações</th></tr></thead>
+    <tbody>
+        {% for control in controls %}
+        <tr>
+            <td>{{ control.code }}</td>
+            <td>{{ control.name }}</td>
+            <td>{{ control.parent|default:"-" }}</td>
+            <td>{% if control.is_active %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}</td>
+            <td class="text-end">
+                {% if perms.taxonomy.change_frameworkcontrol %}<a href="{% url 'taxonomy:frameworkcontrol_update' pk=control.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>{% endif %}
+                {% if perms.taxonomy.delete_frameworkcontrol %}<a href="{% url 'taxonomy:frameworkcontrol_delete' pk=control.pk %}" class="btn btn-sm btn-outline-danger">Excluir</a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">Nenhum controle cadastrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

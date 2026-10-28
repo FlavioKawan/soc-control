@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Remover - SOC Control{% endblock %}
+{% block content %}
+<h2>Remover Fonte de Log do Template</h2>
+<div class="card shadow-sm" style="max-width: 480px;">
+    <div class="card-body">
+        <p>Confirma a remoção de <strong>{{ object.log_source }}</strong> do template <strong>{{ object.template }}</strong>?</p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Remover</button>
+            <a href="{% url 'catalog:template_detail' pk=object.template_id %}" class="btn btn-outline-secondary">Cancelar</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

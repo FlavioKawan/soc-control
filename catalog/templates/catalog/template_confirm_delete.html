@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Excluir Template - SOC Control{% endblock %}
+{% block content %}
+<h2>Excluir Template</h2>
+<div class="card shadow-sm" style="max-width: 480px;">
+    <div class="card-body">
+        <p>Confirma a exclusão de <strong>{{ object }}</strong>? Os itens do template também serão excluídos (os clientes que já aplicaram este template não são afetados).</p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Excluir</button>
+            <a href="{% url 'catalog:template_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

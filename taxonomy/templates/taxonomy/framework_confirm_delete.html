@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Excluir Framework - SOC Control{% endblock %}
+{% block content %}
+<h2>Excluir Framework</h2>
+<div class="card shadow-sm" style="max-width: 480px;">
+    <div class="card-body">
+        <p>Confirma a exclusão de <strong>{{ object }}</strong>? Todos os controles/técnicas associados também serão excluídos.</p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Excluir</button>
+            <a href="{% url 'taxonomy:framework_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

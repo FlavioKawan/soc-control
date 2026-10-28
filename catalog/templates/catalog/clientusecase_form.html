@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Caso de Uso - {{ client_obj.name }} - SOC Control{% endblock %}
+{% block content %}
+<h2>{% if object %}Editar{% else %}Adicionar{% endif %} Caso de Uso - {{ client_obj.name }}</h2>
+<form method="post" class="card p-4" style="max-width: 640px;">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="mb-3">
+        <label class="form-label">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{% url 'clients:client_detail' pk=client_obj.pk %}" class="btn btn-outline-secondary">Cancelar</a>
+</form>
+{% endblock %}

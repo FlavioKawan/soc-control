@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% load audit_extras %}
+{% block title %}{{ client.name }} - SOC Control{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h2 class="mb-1">{{ client.name }}</h2>
+        <div class="text-muted small">
+            {% if client.legal_name %}{{ client.legal_name }} &middot; {% endif %}
+            {% if client.status %}
+            <span class="badge" style="background-color: {{ client.status.color|default:'#6c757d' }};">{{ client.status.name }}</span>
+            {% else %}
+            <span class="text-muted">Status não definido</span>
+            {% endif %}
+            &middot; cliente desde {{ client.created_at|date:"d/m/Y" }}
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'clients:client_list' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Voltar</a>
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-file-earmark-arrow-down"></i> Exportar relatório
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><h6 class="dropdown-header">Para enviar ao cliente</h6></li>
+                <li><a class="dropdown-item" href="{% url 'reports:client_facing_report_pdf' pk=client.pk %}"><i class="bi bi-file-earmark-pdf"></i> Relatório do cliente (PDF)</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><h6 class="dropdown-header">Uso interno do SOC</h6></li>
+                <li><a class="dropdown-item" href="{% url 'reports:client_report_pdf' pk=client.pk %}"><i class="bi bi-file-earmark-pdf"></i> Relatório interno (PDF)</a></li>
+                <li><a class="dropdown-item" href="{% url 'reports:client_report_excel' pk=client.pk %}"><i class="bi bi-file-earmark-excel"></i> Relatório interno (Excel)</a></li>
+            </ul>
+        </div>
+        {% if perms.clients.change_client %}
+        <a href="{% url 'clients:client_update' pk=client.pk %}" class="btn btn-primary"><i class="bi bi-pencil"></i> Editar</a>
+        {% endif %}
+    </div>
+</div>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-overview" type="button">Visão Geral</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-logsources" type="button">
+            Fontes de Log <span class="badge badge-neutral ms-1">{{ client.log_sources.count }}</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-usecases" type="button">
+            Casos de Uso <span class="badge badge-neutral ms-1">{{ client.use_cases.count }}</span>
+        </button>
+    </li>
+    {% if audit_entries is not None %}
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-history" type="button">
+            Histórico
+        </button>
+    </li>
+    {% endif %}
+</ul>
+
+<div class="tab-content">
+
+    <div class="tab-pane fade show active" id="tab-overview">
+        <div class="row g-4">
+            <div class="col-md-7">
+                <h6 class="text-muted text-uppercase small fw-bold">Observações</h6>
+                {% if client.notes %}
+                <p>{{ client.notes|linebreaksbr }}</p>
+                {% else %}
+                <p class="text-muted">Nenhuma observação registrada.</p>
+                {% endif %}
+
+                {% if templates and perms.catalog.add_clientusecase %}
+                <h6 class="text-muted text-uppercase small fw-bold mt-4">Aplicar template</h6>
+                <form method="post" action="{% url 'catalog:apply_template' client_pk=client.pk %}" class="d-flex gap-2" style="max-width: 420px;">
+                    {% csrf_token %}
+                    <select name="template" class="form-select" required>
+                        <option value="">Selecione...</option>
+                        {% for t in templates %}<option value="{{ t.pk }}">{{ t.name }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-outline-primary text-nowrap"><i class="bi bi-magic"></i> Aplicar</button>
+                </form>
+                <p class="form-text">Cria as fontes de log e casos de uso do template que ainda não existirem para este cliente.</p>
+                {% endif %}
+            </div>
+
+            <div class="col-md-5">
+                <h6 class="text-muted text-uppercase small fw-bold">Resumo</h6>
+                <dl class="row mb-0">
+                    <dt class="col-7">Cobertura de casos de uso</dt>
+                    <dd class="col-5 text-end">
+                        {% if coverage.applicable %}{{ coverage.percentage }}%{% else %}<span class="text-muted">—</span>{% endif %}
+                    </dd>
+
+                    <dt class="col-7">Regras</dt>
+                    <dd class="col-5 text-end"><a href="{% url 'detections:rule_list' %}?client={{ client.pk }}">{{ client.rules.count }}</a></dd>
+
+                    <dt class="col-7">Gaps em aberto</dt>
+                    <dd class="col-5 text-end"><a href="{% url 'gaps:gap_list' %}?client={{ client.pk }}">{{ open_gaps_count }} / {{ client.gaps.count }}</a></dd>
+
+                    <dt class="col-7">Última atualização</dt>
+                    <dd class="col-5 text-end">{{ client.updated_at|date:"d/m/Y" }}</dd>
+                </dl>
+                {% if coverage.applicable %}
+                <p class="form-text mb-0">
+                    {{ coverage.covered }} de {{ coverage.applicable }} casos de uso aplicáveis estão cobertos.
+                    Casos "Não aplicável" não entram no cálculo.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="tab-logsources">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <p class="text-muted small mb-0">
+                A situação <strong>deste cliente</strong> para cada fonte do
+                <a href="{% url 'catalog:logsource_list' %}">catálogo global</a> — recebendo, sem log, não integrado.
+            </p>
+            {% if perms.catalog.add_clientlogsource %}
+            <a href="{% url 'catalog:clientlogsource_create' client_pk=client.pk %}" class="btn btn-primary btn-sm text-nowrap"><i class="bi bi-plus-lg"></i> Adicionar fonte de log</a>
+            {% endif %}
+        </div>
+        <table class="table table-striped shadow-sm">
+            <thead><tr><th>Fonte</th><th>Status</th><th>Último evento</th><th>Observações</th><th class="text-end">Ações</th></tr></thead>
+            <tbody>
+                {% for link in client.log_sources.all %}
+                <tr>
+                    <td>{{ link.log_source.name }}</td>
+                    <td>
+                        {% if link.status %}
+                        <span class="badge" style="background-color: {{ link.status.color|default:'#6c757d' }};">{{ link.status.name }}</span>
+                        {% else %}<span class="text-muted">-</span>{% endif %}
+                    </td>
+                    <td>{{ link.last_event_at|date:"d/m/Y H:i"|default:"-" }}</td>
+                    <td>{{ link.notes|default:"-"|truncatechars:60 }}</td>
+                    <td class="text-end">
+                        {% if perms.catalog.change_clientlogsource %}<a href="{% url 'catalog:clientlogsource_update' pk=link.pk %}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>{% endif %}
+                        {% if perms.catalog.delete_clientlogsource %}<a href="{% url 'catalog:clientlogsource_delete' pk=link.pk %}" class="btn btn-sm btn-outline-danger" title="Remover"><i class="bi bi-trash"></i></a>{% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-muted">Nenhuma fonte de log associada a este cliente.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="tab-pane fade" id="tab-usecases">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <p class="text-muted small mb-0">
+                A cobertura <strong>deste cliente</strong> para cada caso do
+                <a href="{% url 'catalog:usecase_list' %}">catálogo global</a> — coberto, parcial, não coberto. A
+                regra técnica que faz a detecção fica em <a href="{% url 'detections:rule_list' %}?client={{ client.pk }}">Regras</a>.
+            </p>
+            {% if perms.catalog.add_clientusecase %}
+            <a href="{% url 'catalog:clientusecase_create' client_pk=client.pk %}" class="btn btn-primary btn-sm text-nowrap"><i class="bi bi-plus-lg"></i> Adicionar caso de uso</a>
+            {% endif %}
+        </div>
+        <table class="table table-striped shadow-sm">
+            <thead><tr><th>Caso de Uso</th><th>Status</th><th>Criticidade</th><th>Responsável</th><th>Última validação</th><th class="text-end">Ações</th></tr></thead>
+            <tbody>
+                {% for link in client.use_cases.all %}
+                <tr>
+                    <td>{{ link.use_case }}</td>
+                    <td>
+                        {% if link.status %}
+                        <span class="badge" style="background-color: {{ link.status.color|default:'#6c757d' }};">{{ link.status.name }}</span>
+                        {% else %}<span class="text-muted">-</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if link.criticality %}
+                        <span class="badge" style="background-color: {{ link.criticality.color|default:'#6c757d' }};">{{ link.criticality.name }}</span>
+                        {% else %}<span class="text-muted">-</span>{% endif %}
+                    </td>
+                    <td>{{ link.owner|default:"-" }}</td>
+                    <td>
+                        {{ link.last_validated_at|date:"d/m/Y"|default:"-" }}
+                        {% if link.use_case_id in inconsistent_use_case_ids %}<span class="badge bg-danger">Inconsistência de cobertura</span>{% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if perms.catalog.change_clientusecase %}<a href="{% url 'catalog:clientusecase_update' pk=link.pk %}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>{% endif %}
+                        {% if perms.catalog.delete_clientusecase %}<a href="{% url 'catalog:clientusecase_delete' pk=link.pk %}" class="btn btn-sm btn-outline-danger" title="Remover"><i class="bi bi-trash"></i></a>{% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-muted">Nenhum caso de uso associado a este cliente.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if audit_entries is not None %}
+    <div class="tab-pane fade" id="tab-history">
+        <p class="text-muted small mb-2">
+            Criação, alteração e exclusão de Regras e Gaps deste cliente, e do próprio cadastro do cliente.
+            <a href="{% url 'audit:auditlog_list' %}?client={{ client.pk }}">Ver histórico completo &rarr;</a>
+        </p>
+        <table class="table table-striped shadow-sm">
+            <thead><tr><th>Data/hora</th><th>Usuário</th><th>Ação</th><th>Entidade</th><th>Objeto</th><th>O que mudou</th></tr></thead>
+            <tbody>
+                {% for entry in audit_entries %}
+                <tr>
+                    <td class="text-nowrap">{{ entry.timestamp|date:"d/m/Y H:i" }}</td>
+                    <td>{{ entry.user|default:"Sistema" }}</td>
+                    <td>
+                        <span class="badge {% if entry.action == 'CREATE' %}bg-success{% elif entry.action == 'DELETE' %}bg-danger{% else %}bg-primary{% endif %}">
+                            {{ entry.get_action_display }}
+                        </span>
+                    </td>
+                    <td>{{ entry.model_name }}</td>
+                    <td>{{ entry.object_repr }}</td>
+                    <td>{{ entry.changes|audit_changes }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-muted">Nenhuma alteração registrada ainda.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
