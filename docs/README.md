@@ -1,9 +1,8 @@
 # Documentação técnica — SOC Control
 
 Documentação para **quem vai manter ou alterar o código**. O `README.md` da
-raiz conta a história do projeto fase a fase (o que foi decidido e por quê);
-estes arquivos respondem "como o sistema funciona hoje e o que eu mexo para
-mudar X".
+raiz é só a porta de entrada (o que é, stack, instalação); estes arquivos
+respondem "como o sistema funciona hoje e o que eu mexo para mudar X".
 
 | Arquivo | Leia quando... |
 |---|---|

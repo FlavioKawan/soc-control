@@ -153,3 +153,44 @@ e rodar `python manage.py check --deploy`.
 | Histórico com usuário vazio | alteração feita fora de requisição (shell, comando agendado) | esperado |
 | Widget Kill Chain sumiu do dashboard | framework renomeado (é buscado pelo nome "Cyber Kill Chain") | renomear de volta ou rodar `seed_kill_chain` |
 | Mudança em `.py` não surtiu efeito | Gunicorn não recarrega sozinho | `docker compose restart web` |
+
+## 8. Segurança — pentest interno
+
+Revisão ofensiva feita no próprio ambiente local (`localhost:8088`),
+combinando leitura de código e ataques reais via HTTP. Achados e correções:
+
+| # | Achado | Severidade | Correção |
+|---|---|---|---|
+| 1 | **Open redirect** (CWE-601): `RuleColumnPreferenceUpdateView` fazia `redirect(request.POST.get("next"))` sem validar o destino — um link malicioso podia redirecionar para qualquer domínio externo. | Alta | `django.utils.http.url_has_allowed_host_and_scheme` — só aceita URL relativa do mesmo host. |
+| 2 | **Crash (500) com parâmetros inválidos** (CWE-20): `?stage=abc`, `?client=abc`, `?technology=abc` quebravam com `ValueError` não tratado — página fora do ar para quem usasse esse link, e com `DEBUG=True` expunha stack trace. | Alta | `core/utils.py::parse_int_or_none` — todo ID vindo de querystring passa por aqui antes de qualquer `.filter(pk=...)`. |
+| 3 | **Login sem limite de tentativas** (CWE-307): 10+ tentativas de senha errada em sequência, todas aceitas sem bloqueio — força bruta trivial contra o admin. | Alta | `accounts/views.py::ThrottledLoginView` — bloqueia por IP (não por usuário, para não permitir que alguém trave o admin de propósito) após 10 falhas em 15 min. Usa um cache no próprio Postgres (`DatabaseCache`), sem precisar de Redis. |
+| 4 | **Importação de CSV sem limite de linhas** (CWE-400): cada linha faz várias consultas individuais; um arquivo gigante travaria um worker do Gunicorn por minutos — com 2-3 uploads simultâneos, a aplicação fica fora do ar para todo mundo. | Média | `MAX_CSV_ROWS = 5000` em `detections/services.py` — interrompe e avisa em vez de processar sem limite. |
+| 5 | Nginx expunha a versão (`Server: nginx/1.27.5`) — reconhecimento facilitado para um atacante escolher exploits conhecidos. | Baixa | `server_tokens off;` no `nginx.conf`. |
+| 6 | `CSRF_COOKIE_HTTPONLY=False` sem necessidade — nenhum JS do sistema lê esse cookie. | Baixa | `CSRF_COOKIE_HTTPONLY = True`. |
+
+**Testados e confirmados seguros** (sem necessidade de correção): SQL
+injection via campos de busca (ORM parametriza tudo), XSS armazenado
+(auto-escape do Django confirmado com `<script>` real), acesso a páginas
+protegidas sem login (sempre 302 para o login), header `Host` forjado
+(sempre 400, `ALLOWED_HOSTS` funcionando), CSRF (middleware nativo do
+Django, cookie agora `HttpOnly`).
+
+**Registrado, não corrigido ainda** — exige uma decisão de produto antes
+de implementar: a spec original pede "isolamento entre clientes na
+camada de aplicação". Hoje qualquer usuário autenticado com a permissão
+`view_client` vê **todos** os clientes — não há um vínculo
+usuário↔cliente que restrinja um analista a só ver os clientes dele. O
+que já existe é o isolamento "defensivo" dentro dos formulários (ex:
+`GapForm` só oferece casos de uso/fontes/regras do cliente selecionado,
+para não misturar dados por engano) — isso evita erro, não impede acesso.
+Se o requisito for "cada analista só vê os clientes atribuídos a ele", é
+uma feature nova (precisa de um modelo de atribuição usuário↔cliente e um
+filtro em toda queryset) — vale conversar antes de implementar algo que
+pode não ser o que você imaginou.
+
+Todos os achados corrigidos têm teste de regressão automatizado
+(`accounts/tests.py::LoginThrottleTests`,
+`detections/tests.py::MalformedQueryParamTests`,
+`detections/tests.py::OpenRedirectTests`,
+`detections/tests.py::CsvImportTests::test_oversized_file_is_capped...`,
+`dashboard/tests.py::MalformedFilterParamTests`).
