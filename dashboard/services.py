@@ -1,13 +1,19 @@
+from collections import defaultdict
+
 from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 
 from catalog.models import ClientLogSource, ClientUseCase
+from clients.models import Client
 from detections.models import Rule
 from gaps.models import Gap
 from taxonomy.choices import StatusCategory
 from taxonomy.models import Framework
 from taxonomy.services import framework_layers
+
+#: How many clients the "melhor cobertura" ranking shows.
+CLIENT_RANKING_SIZE = 5
 
 #: key -> (Framework name, hint shown when it hasn't been seeded/created yet).
 #: Both are "fixed" widgets the Dashboard always offers a tab for (see
@@ -77,7 +83,6 @@ def build_dashboard(client=None, technology=None):
 
     charts = {
         "rules_by_status": _grouped(rule_qs, "status__name", "status__color"),
-        "rules_by_technology": _grouped(rule_qs, "technology__name", palette=True),
         "rules_by_severity": _grouped(rule_qs, "severity__name", "severity__color"),
         "usecases_by_category": _grouped(cuc_qs, "use_case__category__name", palette=True),
         "gaps_by_criticality": _grouped(gap_qs, "criticality__name", "criticality__color"),
@@ -110,9 +115,78 @@ def build_dashboard(client=None, technology=None):
                     "description": layer["control"].description,
                     "count": rule_qs.filter(framework_controls__in=layer["control_ids"]).distinct().count(),
                     "url": f"{base_url}?stage={layer['control'].pk}{suffix}",
+                    "control_ids": layer["control_ids"],
                 }
                 for layer in framework_layers(framework)
             ]
         layer_widgets.append({"key": key, "name": framework_name, "seed_hint": seed_hint, "layers": layers})
 
-    return {"cards": cards, "charts": charts, "layer_widgets": layer_widgets}
+    # Comparing a client against itself (ranking) or showing "our" combined
+    # score while already looking at one client's own layer tabs (maturity)
+    # is redundant - both only make sense in the "all clients" view.
+    layer_maturity = None
+    client_ranking = None
+    if client is None:
+        layer_maturity = _combined_layer_maturity(layer_widgets)
+        client_ranking = _client_layer_ranking(layer_widgets, technology)
+
+    return {
+        "cards": cards,
+        "charts": charts,
+        "layer_widgets": layer_widgets,
+        "layer_maturity": layer_maturity,
+        "client_ranking": client_ranking,
+    }
+
+
+def _combined_layer_maturity(layer_widgets):
+    """One number for "how exposed are we": the share of layers (Kill
+    Chain stages + MITRE ATT&CK tactics combined) with at least one rule
+    behind them, for the dashboard's current filters."""
+    total = sum(len(widget["layers"]) for widget in layer_widgets if widget["layers"])
+    if not total:
+        return None
+    covered = sum(
+        1 for widget in layer_widgets if widget["layers"] for layer in widget["layers"] if layer["count"]
+    )
+    return {"covered": covered, "total": total, "percentage": round(100 * covered / total)}
+
+
+def _client_layer_ranking(layer_widgets, technology, limit=CLIENT_RANKING_SIZE):
+    """
+    Top clients by the same combined layer coverage _combined_layer_maturity
+    computes for "everyone" - answers "who are we protecting best/worst".
+    One query for every (client, control) pair tagged under a tracked
+    layer, instead of one query per client per layer.
+    """
+    layer_by_control = {}
+    total_layers = 0
+    for widget in layer_widgets:
+        if not widget["layers"]:
+            continue
+        for layer in widget["layers"]:
+            total_layers += 1
+            for control_id in layer["control_ids"]:
+                layer_by_control[control_id] = (widget["key"], layer["id"])
+    if not total_layers:
+        return None
+
+    tagged_rules = Rule.objects.filter(framework_controls__id__in=layer_by_control)
+    if technology:
+        tagged_rules = tagged_rules.filter(technology=technology)
+
+    covered_layers_by_client = defaultdict(set)
+    for client_id, control_id in tagged_rules.values_list("client_id", "framework_controls__id").distinct():
+        covered_layers_by_client[client_id].add(layer_by_control[control_id])
+
+    ranking = [
+        {
+            "client": candidate,
+            "covered": len(covered_layers_by_client.get(candidate.pk, ())),
+            "total": total_layers,
+            "percentage": round(100 * len(covered_layers_by_client.get(candidate.pk, ())) / total_layers),
+        }
+        for candidate in Client.objects.all()
+    ]
+    ranking.sort(key=lambda row: (-row["percentage"], row["client"].name))
+    return ranking[:limit]

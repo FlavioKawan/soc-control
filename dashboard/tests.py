@@ -60,6 +60,86 @@ class LayerWidgetsTests(TestCase):
         self.assertEqual(layer["count"], 1)
 
 
+class LayerMaturityTests(TestCase):
+    """Combined Kill Chain + MITRE ATT&CK coverage, as one percentage -
+    only meaningful in the "all clients" view (comparing a single client
+    against itself would be redundant with its own layer tabs)."""
+
+    def setUp(self):
+        self.client_obj = Client.objects.create(name="Acme Corp")
+        self.technology = Technology.objects.create(name="Wazuh")
+
+    def _rule(self, internal_id, **kwargs):
+        return Rule.objects.create(
+            internal_id=internal_id, name=internal_id, client=self.client_obj,
+            technology=self.technology, **kwargs,
+        )
+
+    def test_none_without_any_layer_framework(self):
+        self.assertIsNone(build_dashboard()["layer_maturity"])
+
+    def test_combines_both_frameworks_into_one_percentage(self):
+        kill_chain = Framework.objects.create(name="Cyber Kill Chain")
+        covered_stage = FrameworkControl.objects.create(framework=kill_chain, code="KC1", name="Reconhecimento")
+        FrameworkControl.objects.create(framework=kill_chain, code="KC2", name="Entrega")
+        mitre = Framework.objects.create(name="MITRE ATT&CK")
+        FrameworkControl.objects.create(framework=mitre, code="TA06", name="Credential Access")
+        self._rule("SOC-001").framework_controls.add(covered_stage)
+
+        # 1 of 2 Kill Chain stages + 0 of 1 MITRE tactic = 1 of 3 layers.
+        maturity = build_dashboard()["layer_maturity"]
+        self.assertEqual((maturity["covered"], maturity["total"], maturity["percentage"]), (1, 3, 33))
+
+    def test_hidden_when_a_specific_client_is_selected(self):
+        Framework.objects.create(name="Cyber Kill Chain")
+        self.assertIsNone(build_dashboard(client=self.client_obj)["layer_maturity"])
+
+
+class ClientLayerRankingTests(TestCase):
+    def setUp(self):
+        self.technology = Technology.objects.create(name="Wazuh")
+        self.framework = Framework.objects.create(name="Cyber Kill Chain")
+        self.stage_a = FrameworkControl.objects.create(framework=self.framework, code="KC1", name="Reconhecimento")
+        self.stage_b = FrameworkControl.objects.create(framework=self.framework, code="KC2", name="Entrega")
+
+    def test_ranking_orders_clients_by_coverage_percentage(self):
+        best = Client.objects.create(name="Acme (2/2)")
+        worst = Client.objects.create(name="Globex (1/2)")
+        Rule.objects.create(
+            internal_id="A-1", name="A-1", client=best, technology=self.technology
+        ).framework_controls.add(self.stage_a)
+        Rule.objects.create(
+            internal_id="A-2", name="A-2", client=best, technology=self.technology
+        ).framework_controls.add(self.stage_b)
+        Rule.objects.create(
+            internal_id="B-1", name="B-1", client=worst, technology=self.technology
+        ).framework_controls.add(self.stage_a)
+
+        ranking = build_dashboard()["client_ranking"]
+        self.assertEqual([row["client"] for row in ranking[:2]], [best, worst])
+        self.assertEqual((ranking[0]["covered"], ranking[0]["percentage"]), (2, 100))
+        self.assertEqual((ranking[1]["covered"], ranking[1]["percentage"]), (1, 50))
+
+    def test_client_with_no_tagged_rules_scores_zero(self):
+        Client.objects.create(name="Acme")
+        ranking = build_dashboard()["client_ranking"]
+        self.assertEqual(ranking[0]["percentage"], 0)
+
+    def test_ranking_respects_the_technology_filter(self):
+        client_obj = Client.objects.create(name="Acme")
+        other_technology = Technology.objects.create(name="Splunk")
+        Rule.objects.create(
+            internal_id="A-1", name="A-1", client=client_obj, technology=other_technology
+        ).framework_controls.add(self.stage_a)
+
+        ranking = build_dashboard(technology=self.technology)["client_ranking"]
+        self.assertEqual(ranking[0]["covered"], 0)
+
+    def test_hidden_when_a_specific_client_is_selected(self):
+        client_obj = Client.objects.create(name="Acme")
+        self.assertIsNone(build_dashboard(client=client_obj)["client_ranking"])
+
+
 class MalformedFilterParamTests(TestCase):
     """
     Pentest finding: ?client=abc and ?technology=abc crashed with an

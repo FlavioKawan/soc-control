@@ -175,6 +175,17 @@ def _layer_coverage(layer_coverage):
         ]
         return elements
 
+    total = sum(len(item["layers"]) for item in layer_coverage)
+    covered = sum(1 for item in layer_coverage for layer in item["layers"] if layer["covered"])
+    framework_names = " e ".join(escape(item["framework"].name) for item in layer_coverage)
+    elements.append(
+        Paragraph(
+            f"Você está protegido em <b>{covered} de {total}</b> camadas de ataque conhecidas ({framework_names}).",
+            _STYLES["Normal"],
+        )
+    )
+    elements.append(Spacer(1, 0.3 * cm))
+
     covered_bg, uncovered_bg, uncovered_fg = (
         colors.HexColor("#22c55e"), colors.HexColor("#e5e7eb"), colors.HexColor("#6b7280"),
     )

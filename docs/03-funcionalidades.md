@@ -31,10 +31,12 @@ aplica. Nomes de URL no formato `namespace:nome` (use com `{% url %}` /
 | `/` | `dashboard` | só login |
 
 - Filtros opcionais `?client=<id>&technology=<id>` (validados com `parse_int_or_none`). O filtro de tecnologia afeta só as regras.
-- Toda a agregação está em `dashboard/services.py::build_dashboard`, que devolve `{cards, charts, layer_widgets}`:
+- Toda a agregação está em `dashboard/services.py::build_dashboard`, que devolve `{cards, charts, layer_widgets, layer_maturity, client_ranking}`:
   - **cards**: totais de regras por `status.category`, revisões pendentes, casos de uso cobertos/parciais/não cobertos, gaps totais/abertos, fontes sem dados.
-  - **charts**: listas `[{label, value, color}]` via `_grouped()` (GROUP BY). A cor vem do catálogo; se não houver, usa `FALLBACK_PALETTE`.
+  - **charts**: regras por status/severidade, cobertura de casos de uso, casos de uso por categoria, gaps por criticidade, top ameaças - listas `[{label, value, color}]` via `_grouped()` (GROUP BY). A cor vem do catálogo; se não houver, usa `FALLBACK_PALETTE`. (O gráfico "Regras por tecnologia" foi removido - redundante com o filtro de tecnologia no topo da página.)
   - **layer_widgets**: duas abas fixas (`LAYER_WIDGETS` em `dashboard/services.py`) - Cyber Kill Chain e MITRE ATT&CK, pelo nome exato do Framework (`taxonomy.services.LAYER_FRAMEWORK_NAMES`). Cada camada é um controle de nível superior (`taxonomy/services.py::framework_layers` - sem `parent`, ex.: uma tática do MITRE) com a contagem somando regras ligadas a ele **ou a qualquer descendente** (ex.: as técnicas daquela tática), e link para `/regras/?stage=<id>` (o mesmo filtro expande para os descendentes em `detections/views.py::RuleListView`). Framework inexistente → aba mostra o comando de seed (`seed_kill_chain` / `seed_mitre_attack`) em vez da lista.
+  - **layer_maturity**: `{covered, total, percentage}` - combina as camadas das duas abas num só número ("X% de maturidade combinada"), mostrado no cabeçalho do card de camadas. `None` se nenhum dos dois frameworks existir, ou se `?client=` estiver preenchido (comparar um cliente com ele mesmo é redundante com as próprias abas de camada dele).
+  - **client_ranking**: top `CLIENT_RANKING_SIZE` (5) clientes por cobertura combinada de camadas (mesmo cálculo do `layer_maturity`, por cliente), em ordem decrescente. Também `None` com `?client=` preenchido - um ranking não faz sentido filtrado para 1 cliente. Uma única query agrega `(cliente, controle)` para todos os clientes de uma vez, em vez de 1 query por cliente por camada.
 - Template: `dashboard/templates/dashboard/dashboard.html` (Chart.js). Mostra o fluxo de primeiros passos quando não há cliente ou regra (`is_new_setup`).
 
 ## 3. Clientes — `clients`
@@ -191,7 +193,7 @@ Há duas versões, ambas no botão "Exportar relatório" da página do cliente:
 - Regras de negócio:
   - "Ações pendentes do cliente" = gaps abertos cujo Responsável tem `is_client=True` (marcado em Configurações › Responsáveis — nunca pelo nome) + fontes de log com status `NOT_RECEIVING`/`NOT_INTEGRATED`, com quantas detecções **ativas** dependem de cada uma.
   - Casos de uso `NOT_APPLICABLE` não aparecem.
-  - **Camadas de ataque protegidas** (`_layer_coverage` em `reports/services.py`): visual executivo, uma tira de células coloridas por camada (Cyber Kill Chain / MITRE ATT&CK, mesma ideia do widget do Dashboard - `reports/pdf.py::_layer_coverage`). Verde = pelo menos 1 regra **ativa** deste cliente ligada à camada ou a algum descendente; cinza = não coberta. Pensado para ser lido em 5 segundos, sem abrir a tabela controle a controle.
+  - **Camadas de ataque protegidas** (`_layer_coverage` em `reports/services.py`): visual executivo, uma tira de células coloridas por camada (Cyber Kill Chain / MITRE ATT&CK, mesma ideia do widget do Dashboard - `reports/pdf.py::_layer_coverage`). Verde = pelo menos 1 regra **ativa** deste cliente ligada à camada ou a algum descendente; cinza = não coberta. Acima da tira, uma frase-resumo ("Você está protegido em X de Y camadas de ataque conhecidas"). Pensado para ser lido em 5 segundos, sem abrir a tabela controle a controle.
   - Cobertura por framework: um controle está coberto se tem ≥ 1 regra **ativa** deste cliente. Frameworks com até `FRAMEWORK_FULL_LIST_MAX_CONTROLS` (30) controles são listados inteiros (ex.: Kill Chain); maiores (ex.: MITRE completo) listam só os cobertos. Lista **todo** Framework ativo, não só os dois fixos de "Camadas de ataque protegidas".
 
 Para incluir um dado novo: adicione-o no service da versão certa e depois em **cada** renderizador que deve exibi-lo. Antes de pôr algo na versão do cliente, pergunte: "posso mostrar isso ao cliente?".

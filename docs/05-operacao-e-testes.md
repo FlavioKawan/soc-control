@@ -110,7 +110,7 @@ criar bancos, e o usuário padrão da imagem oficial tem.
 | `detections` | form, revisão vencida, inoperância, inconsistência de cobertura, CSV, colunas, filtros, parâmetros malformados, open redirect, filtro por camada (`?stage=`) incluindo descendentes |
 | `gaps` | model, escopo do form por cliente, permissões, filtros, vínculos opcionais (SET_NULL), catálogo de Responsáveis |
 | `audit` | create/update/delete, M2M, usuário da requisição, exclusão em cascata de cliente, permissão |
-| `dashboard` | parâmetros malformados, widgets de camada (Kill Chain/MITRE ATT&CK) |
+| `dashboard` | parâmetros malformados, widgets de camada (Kill Chain/MITRE ATT&CK), maturidade combinada, ranking de clientes |
 | `search` | resultados e filtro por permissão |
 | `reports` | services interno e para o cliente (ações do cliente, cobertura por framework, camadas de ataque protegidas, só regras ativas), download PDF/Excel, permissões |
 | `notifications` | regras vencidas, gaps parados, montagem do digest, comando de envio |
