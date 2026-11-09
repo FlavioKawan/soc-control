@@ -173,4 +173,10 @@ LOGGING = {
         "handlers": ["console"],
         "level": "INFO",
     },
+    "loggers": {
+        # fontTools logs its font-subsetting internals (glyph lists/IDs) at INFO -
+        # WeasyPrint calls it on every client-facing report PDF (reports/pdf.py),
+        # which would otherwise flood `docker compose logs web` with noise.
+        "fontTools": {"level": "WARNING"},
+    },
 }

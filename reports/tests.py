@@ -11,9 +11,9 @@ from clients.models import Client
 from detections.models import Rule
 from gaps.models import Gap
 from taxonomy.choices import StatusCategory, StatusScope
-from taxonomy.models import Framework, FrameworkControl, ResponsibleParty, Status, Technology
+from taxonomy.models import Framework, FrameworkControl, ResponsibleParty, Severity, Status, Technology
 
-from .pdf import render_client_facing_report_pdf
+from .pdf import _framework_bars, _narrative, _severity_bars, render_client_facing_report_pdf
 from .services import FRAMEWORK_FULL_LIST_MAX_CONTROLS, build_client_facing_report, build_client_report
 
 
@@ -200,6 +200,7 @@ class ClientReportViewTests(TestCase):
     def test_viewer_can_download_pdf(self):
         user = User.objects.create_user("viewer", password="x")
         user.groups.add(Group.objects.get(name="VIEWER"))
+        self.client_obj.assigned_users.add(user)
         self.client.force_login(user)
 
         response = self.client.get(reverse("reports:client_report_pdf", kwargs={"pk": self.client_obj.pk}))
@@ -210,6 +211,7 @@ class ClientReportViewTests(TestCase):
     def test_viewer_can_download_excel_and_it_contains_expected_sheets(self):
         user = User.objects.create_user("viewer2", password="x")
         user.groups.add(Group.objects.get(name="VIEWER"))
+        self.client_obj.assigned_users.add(user)
         self.client.force_login(user)
 
         response = self.client.get(reverse("reports:client_report_excel", kwargs={"pk": self.client_obj.pk}))
@@ -227,6 +229,7 @@ class ClientReportViewTests(TestCase):
     def test_viewer_can_download_client_facing_pdf(self):
         user = User.objects.create_user("viewer3", password="x")
         user.groups.add(Group.objects.get(name="VIEWER"))
+        self.client_obj.assigned_users.add(user)
         self.client.force_login(user)
         Gap.objects.create(code="GAP-002", client=self.client_obj, title="Título com <marcação> & símbolos")
 
@@ -282,3 +285,91 @@ class LayerCoveragePdfTests(TestCase):
 
         pdf_bytes = render_client_facing_report_pdf(build_client_facing_report(client_obj))
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+
+
+class NarrativeTests(TestCase):
+    """_narrative() builds the cover page's auto-written paragraph straight from
+    the report dict - these pin the singular/plural wording (a prior bug had
+    "1 ação pendente dependem", subject/verb mismatch, with the verb always
+    plural regardless of the count)."""
+
+    def setUp(self):
+        self.client_obj = Client.objects.create(name="Acme Corp")
+        self.technology = Technology.objects.create(name="Wazuh")
+        self.active = Status.objects.create(name="Ativa", scope=[StatusScope.RULE], category=StatusCategory.ACTIVE)
+
+    def test_singular_pending_action_uses_singular_verb(self):
+        client_side = ResponsibleParty.objects.create(name="Cliente", is_client=True)
+        open_status = Status.objects.create(name="Aberto", scope=[StatusScope.GAP], category=StatusCategory.OPEN)
+        Gap.objects.create(
+            code="GAP-001", client=self.client_obj, title="Sem MFA", status=open_status, responsible_party=client_side
+        )
+
+        narrative = _narrative(build_client_facing_report(self.client_obj))
+
+        self.assertIn("1 ação pendente depende do seu lado para avançar.", narrative)
+        self.assertNotIn("dependem", narrative)
+
+    def test_plural_pending_actions_uses_plural_verb(self):
+        client_side = ResponsibleParty.objects.create(name="Cliente", is_client=True)
+        open_status = Status.objects.create(name="Aberto", scope=[StatusScope.GAP], category=StatusCategory.OPEN)
+        Gap.objects.create(
+            code="GAP-001", client=self.client_obj, title="Sem MFA", status=open_status, responsible_party=client_side
+        )
+        Gap.objects.create(
+            code="GAP-002", client=self.client_obj, title="Sem EDR", status=open_status, responsible_party=client_side
+        )
+
+        narrative = _narrative(build_client_facing_report(self.client_obj))
+
+        self.assertIn("2 ações pendentes dependem do seu lado para avançar.", narrative)
+
+    def test_no_pending_actions_or_open_gaps_omits_those_sentences(self):
+        narrative = _narrative(build_client_facing_report(self.client_obj))
+
+        self.assertIn("Não há pendências em aberto no momento.", narrative)
+        self.assertNotIn("depende", narrative)
+        self.assertNotIn("dependem", narrative)
+
+    def test_single_active_rule_uses_singular_noun(self):
+        Rule.objects.create(
+            internal_id="SOC-001", name="Brute Force", client=self.client_obj,
+            technology=self.technology, status=self.active,
+        )
+
+        narrative = _narrative(build_client_facing_report(self.client_obj))
+
+        self.assertIn("1 detecção ativa monitorando", narrative)
+
+
+class ChartHelperTests(TestCase):
+    def test_framework_bars_handles_zero_total_controls_without_dividing_by_zero(self):
+        framework = Framework.objects.create(name="Empty Framework")
+        bars = _framework_bars([{"framework": framework, "total": 0, "covered_count": 0}])
+
+        self.assertEqual(bars, [{"name": "Empty Framework", "count": 0, "pct": 0}])
+
+    def test_severity_bars_orders_by_catalog_weight_not_by_count(self):
+        client_obj = Client.objects.create(name="Acme Corp")
+        technology = Technology.objects.create(name="Wazuh")
+        low = Severity.objects.create(name="Baixa", color="#94a3b8", weight=10)
+        critical = Severity.objects.create(name="Crítica", color="#ef4444", weight=90)
+        Rule.objects.create(internal_id="SOC-001", name="A", client=client_obj, technology=technology, severity=low)
+        Rule.objects.create(internal_id="SOC-002", name="B", client=client_obj, technology=technology, severity=low)
+        Rule.objects.create(internal_id="SOC-003", name="C", client=client_obj, technology=technology, severity=critical)
+
+        bars = _severity_bars(Rule.objects.filter(client=client_obj))
+
+        self.assertEqual([bar["name"] for bar in bars], ["Crítica", "Baixa"])
+        self.assertEqual(bars[0]["count"], 1)
+        self.assertEqual(bars[1]["count"], 2)
+        self.assertEqual(bars[1]["pct"], 100)
+
+    def test_severity_bars_groups_rules_without_severity_as_sem_severidade(self):
+        client_obj = Client.objects.create(name="Acme Corp")
+        technology = Technology.objects.create(name="Wazuh")
+        Rule.objects.create(internal_id="SOC-001", name="A", client=client_obj, technology=technology)
+
+        bars = _severity_bars(Rule.objects.filter(client=client_obj))
+
+        self.assertEqual(bars, [{"name": "Sem severidade", "color": "#94a3b8", "count": 1, "pct": 100}])

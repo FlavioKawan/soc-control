@@ -1,26 +1,44 @@
 import io
+import math
 from xml.sax.saxutils import escape
 
+from django.template.loader import render_to_string
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from weasyprint import HTML
+
+# Shared palette - matches the dashboard's chart/badge colors (dashboard/services.py
+# FALLBACK_PALETTE and the coverage cards) so a client sees the same visual language
+# in the app, the internal report below and the client-facing report's HTML template.
+_COLOR_PRIMARY = "#4f46e5"
+_COLOR_SUCCESS = "#22c55e"
+_COLOR_WARNING = "#f59e0b"
+_COLOR_DANGER = "#ef4444"
+_COLOR_MUTED = "#6b7280"
+_COLOR_MUTED_LIGHT = "#94a3b8"
+_COLOR_BORDER = "#e3e5ec"
+_COLOR_BG_LIGHT = "#f8f9fc"
 
 _STYLES = getSampleStyleSheet()
 # Keeps a section title on the same page as the table that follows it.
 _STYLES["Heading2"].keepWithNext = True
 _STYLES["Heading3"].keepWithNext = True
 _CELL_STYLE = ParagraphStyle("cell", parent=_STYLES["Normal"], fontSize=8, leading=10)
-_NOTE_STYLE = ParagraphStyle("note", parent=_STYLES["Normal"], fontSize=8, textColor=colors.HexColor("#6b7280"))
-_LAYER_CELL_STYLE = ParagraphStyle(
-    "layer_cell", parent=_STYLES["Normal"], fontSize=7, leading=9, alignment=TA_CENTER
-)
+
+_DONUT_RADIUS = 54
+_DONUT_CIRCUMFERENCE = 2 * math.pi * _DONUT_RADIUS
 
 
 def render_client_report_pdf(report):
-    """Renders the dict from reports.services.build_client_report() as a PDF (bytes)."""
+    """Renders the dict from reports.services.build_client_report() as a PDF (bytes).
+
+    The internal report: plain reportlab tables, no charts. Kept deliberately
+    simple - it's read by the SOC itself, not handed to a client, so the visual
+    investment went into render_client_facing_report_pdf() instead.
+    """
     client = report["client"]
     coverage = report["coverage"]
 
@@ -89,236 +107,220 @@ def render_client_report_pdf(report):
 
 
 def render_client_facing_report_pdf(report):
-    """Renders the dict from reports.services.build_client_facing_report() as a PDF (bytes)."""
-    client = report["client"]
-    elements = [
-        Paragraph(f"Relatório de Segurança — {escape(client.name)}", _STYLES["Title"]),
-        Paragraph(f"Gerado em {report['generated_at']:%d/%m/%Y %H:%M}", _STYLES["Normal"]),
-        Spacer(1, 0.5 * cm),
+    """Renders the dict from reports.services.build_client_facing_report() as a PDF
+    (bytes) via an HTML/CSS template (reports/templates/reports/client_facing_report.html)
+    rendered through WeasyPrint - real charts (coverage donut, criticality bars),
+    gradients and card layout that plain reportlab tables can't give us.
+
+    The internal report (render_client_report_pdf above) stays on reportlab: nobody
+    asked for that one's look to change, and it has no charts to justify the switch.
+    """
+    html = render_to_string("reports/client_facing_report.html", _client_facing_context(report))
+    return HTML(string=html).write_pdf()
+
+
+def _client_facing_context(report):
+    coverage = report["coverage"]
+    percentage = coverage["percentage"] if coverage["applicable"] else None
+    pending_actions = len(report["client_gaps"]) + len(report["problem_log_sources"])
+
+    stats = [
+        {
+            "value": f"{percentage}%" if percentage is not None else "-",
+            "label": "Cobertura de casos de uso",
+            "color": _coverage_color(percentage),
+        },
+        {
+            "value": len(report["active_rules"]),
+            "label": "Detecções ativas",
+            "color": _COLOR_PRIMARY,
+        },
+        {
+            "value": f"{report['log_sources_receiving']}/{report['log_sources_total']}",
+            "label": "Fontes de log recebendo dados",
+            "color": _ratio_color(report["log_sources_receiving"], report["log_sources_total"]),
+        },
+        {
+            "value": report["open_gaps_count"],
+            "label": "Pendências em aberto",
+            "color": _zero_is_good_color(report["open_gaps_count"]),
+        },
+        {
+            "value": pending_actions,
+            "label": "Ações pendentes do seu lado",
+            "color": _zero_is_good_color(pending_actions),
+        },
     ]
 
-    elements += _executive_summary(report)
-    elements += _layer_coverage(report["layer_coverage"])
-    elements += _client_actions(report)
-    elements += _use_case_coverage(report["use_case_links"])
-    elements += _framework_coverage(report["frameworks"])
-
-    elements.append(Paragraph("Detecções ativas", _STYLES["Heading2"]))
-    if report["active_rules"]:
-        rows = [
-            [_cell(rule.name), _str_or_dash(rule.severity), _str_or_dash(rule.log_source)]
-            for rule in report["active_rules"]
-        ]
-        elements.append(
-            _data_table(["Detecção", "Severidade", "Fonte de log"], rows, col_widths=[9.4 * cm, 3 * cm, 5 * cm])
-        )
-    else:
-        elements.append(Paragraph("Nenhuma detecção ativa no momento.", _STYLES["Normal"]))
-    elements.append(Spacer(1, 0.6 * cm))
-
-    elements.append(Paragraph("Itens em tratamento pelo SOC e terceiros", _STYLES["Heading2"]))
-    if report["other_gaps"]:
-        rows = [
-            [gap.code, _cell(gap.title), _str_or_dash(gap.responsible_party),
-             _str_or_dash(gap.criticality), _str_or_dash(gap.status)]
-            for gap in report["other_gaps"]
-        ]
-        elements.append(
-            _data_table(
-                ["Código", "Item", "Responsável", "Criticidade", "Situação"],
-                rows,
-                col_widths=[2.3 * cm, 7 * cm, 2.8 * cm, 2.6 * cm, 2.7 * cm],
-            )
-        )
-    else:
-        elements.append(Paragraph("Nenhum item em aberto.", _STYLES["Normal"]))
-
-    return _build_pdf(elements, title=f"Relatório de Segurança - {client.name}")
+    return {
+        "client": report["client"],
+        "report": report,
+        "donut": _donut_chart(percentage),
+        "stats": stats,
+        "narrative": _narrative(report),
+        "criticality_bars": _criticality_bars(report["open_gaps_by_criticality"]),
+        "framework_bars": _framework_bars(report["frameworks"]),
+        "severity_bars": _severity_bars(report["active_rules"]),
+        "frameworks": _frameworks_context(report["frameworks"]),
+    }
 
 
-def _executive_summary(report):
+def _narrative(report):
+    """One auto-written paragraph summarizing the report's own numbers, for the
+    cover page - cheap "analyst read it for you" feel, deterministic from the
+    same dict the rest of the report renders from (no extra queries)."""
     coverage = report["coverage"]
-    if coverage["applicable"]:
-        coverage_text = f"{coverage['percentage']}% ({coverage['covered']} de {coverage['applicable']} casos de uso)"
-    else:
-        coverage_text = "Sem casos de uso aplicáveis cadastrados"
+    sentences = []
 
-    gaps_text = str(report["open_gaps_count"])
-    if report["open_gaps_by_criticality"]:
-        gaps_text += " (" + ", ".join(f"{escape(name)}: {count}" for name, count in report["open_gaps_by_criticality"]) + ")"
+    if coverage["applicable"]:
+        sentences.append(
+            f"Sua cobertura de casos de uso está em {coverage['percentage']}%, com "
+            f"{coverage['covered']} de {coverage['applicable']} casos de uso aplicáveis cobertos."
+        )
+    else:
+        sentences.append("Nenhum caso de uso aplicável está cadastrado para este ambiente ainda.")
+
+    active_count = len(report["active_rules"])
+    rule_noun = "detecção ativa" if active_count == 1 else "detecções ativas"
+    sentences.append(f"O SOC mantém {active_count} {rule_noun} monitorando o ambiente.")
+
+    layer_coverage = report["layer_coverage"]
+    if layer_coverage:
+        total_layers = sum(len(item["layers"]) for item in layer_coverage)
+        covered_layers = sum(1 for item in layer_coverage for layer in item["layers"] if layer["covered"])
+        sentences.append(
+            f"Em relação às táticas de ataque conhecidas, você está protegido em {covered_layers} de "
+            f"{total_layers} camadas (Cyber Kill Chain e MITRE ATT&CK)."
+        )
+
+    open_gaps = report["open_gaps_count"]
+    if open_gaps:
+        gap_noun = "pendência em aberto" if open_gaps == 1 else "pendências em aberto"
+        crit_detail = ""
+        if report["open_gaps_by_criticality"]:
+            top_name, _ = report["open_gaps_by_criticality"][0]
+            crit_detail = f', a maior parte classificada como "{top_name}"'
+        sentences.append(f"Há {open_gaps} {gap_noun}{crit_detail}.")
+    else:
+        sentences.append("Não há pendências em aberto no momento.")
 
     pending_actions = len(report["client_gaps"]) + len(report["problem_log_sources"])
-    rows = [
-        ["Cobertura de casos de uso", coverage_text],
-        ["Detecções ativas", str(len(report["active_rules"]))],
-        ["Fontes de log recebendo dados", f"{report['log_sources_receiving']} de {report['log_sources_total']}"],
-        ["Pendências em aberto", Paragraph(gaps_text, _CELL_STYLE)],
-        ["Ações pendentes do seu lado", str(pending_actions)],
-    ]
-    return [Paragraph("Resumo executivo", _STYLES["Heading2"]), _kv_table(rows), Spacer(1, 0.6 * cm)]
-
-
-def _layer_coverage(layer_coverage):
-    """
-    Visual counterpart of the Dashboard's layer-chain widget, as a PDF
-    table: one colored cell per layer (Cyber Kill Chain stage / MITRE
-    ATT&CK tactic), green when at least one active rule covers it. Meant
-    to be read in five seconds by someone who will never open a
-    control-by-control table - that breakdown is "Cobertura por
-    framework" below, for whoever wants it.
-    """
-    elements = [Paragraph("Camadas de ataque protegidas", _STYLES["Heading2"])]
-    if not layer_coverage:
-        elements += [
-            Paragraph("Nenhuma camada configurada (Cyber Kill Chain / MITRE ATT&CK).", _STYLES["Normal"]),
-            Spacer(1, 0.6 * cm),
-        ]
-        return elements
-
-    total = sum(len(item["layers"]) for item in layer_coverage)
-    covered = sum(1 for item in layer_coverage for layer in item["layers"] if layer["covered"])
-    framework_names = " e ".join(escape(item["framework"].name) for item in layer_coverage)
-    elements.append(
-        Paragraph(
-            f"Você está protegido em <b>{covered} de {total}</b> camadas de ataque conhecidas ({framework_names}).",
-            _STYLES["Normal"],
-        )
-    )
-    elements.append(Spacer(1, 0.3 * cm))
-
-    covered_bg, uncovered_bg, uncovered_fg = (
-        colors.HexColor("#22c55e"), colors.HexColor("#e5e7eb"), colors.HexColor("#6b7280"),
-    )
-    for item in layer_coverage:
-        layers = item["layers"]
-        elements.append(Paragraph(escape(item["framework"].name), _STYLES["Heading3"]))
-        row = [Paragraph(escape(layer["name"]), _LAYER_CELL_STYLE) for layer in layers]
-        table = Table([row], colWidths=[(17 * cm) / len(row)] * len(row))
-        style = [
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.white),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]
-        for i, layer in enumerate(layers):
-            bg, fg = (covered_bg, colors.white) if layer["covered"] else (uncovered_bg, uncovered_fg)
-            style.append(("BACKGROUND", (i, 0), (i, 0), bg))
-            style.append(("TEXTCOLOR", (i, 0), (i, 0), fg))
-        table.setStyle(TableStyle(style))
-        elements.append(table)
-        elements.append(Spacer(1, 0.4 * cm))
-    elements.append(Spacer(1, 0.2 * cm))
-    return elements
-
-
-def _client_actions(report):
-    elements = [Paragraph("Ações pendentes do seu lado", _STYLES["Heading2"])]
-    if not report["client_gaps"] and not report["problem_log_sources"]:
-        elements += [Paragraph("Nenhuma ação pendente no momento.", _STYLES["Normal"]), Spacer(1, 0.6 * cm)]
-        return elements
-
-    if report["client_gaps"]:
-        elements.append(Paragraph("Pendências sob sua responsabilidade", _STYLES["Heading3"]))
-        rows = [
-            [gap.code, _cell(gap.title), _str_or_dash(gap.criticality), _cell(gap.recommendation),
-             f"{gap.days_open} dias" if gap.days_open is not None else "-"]
-            for gap in report["client_gaps"]
-        ]
-        elements.append(
-            _data_table(
-                ["Código", "Pendência", "Criticidade", "Recomendação", "Em aberto há"],
-                rows,
-                col_widths=[2.1 * cm, 4.6 * cm, 2.4 * cm, 6 * cm, 2.3 * cm],
-            )
-        )
-        elements.append(Spacer(1, 0.3 * cm))
-
-    if report["problem_log_sources"]:
-        elements.append(Paragraph("Fontes de log sem dados ou não integradas", _STYLES["Heading3"]))
-        rows = [
-            [_cell(str(link.log_source)), _str_or_dash(link.status),
-             link.last_event_at.strftime("%d/%m/%Y %H:%M") if link.last_event_at else "-",
-             str(link.affected_rules_count)]
-            for link in report["problem_log_sources"]
-        ]
-        elements.append(
-            _data_table(
-                ["Fonte de log", "Situação", "Último evento", "Detecções afetadas"],
-                rows,
-                col_widths=[6.4 * cm, 3.5 * cm, 3.7 * cm, 3.8 * cm],
-            )
-        )
-        elements.append(
-            Paragraph(
-                "Enquanto a fonte não enviar dados, as detecções que dependem dela não conseguem alertar.",
-                _NOTE_STYLE,
-            )
-        )
-    elements.append(Spacer(1, 0.6 * cm))
-    return elements
-
-
-def _use_case_coverage(use_case_links):
-    elements = [Paragraph("Cobertura por caso de uso", _STYLES["Heading2"])]
-    if use_case_links:
-        rows = [
-            [_cell(f"{link.use_case.code} — {link.use_case.name}"), _cell(link.use_case.protects),
-             _str_or_dash(link.criticality), _str_or_dash(link.status)]
-            for link in use_case_links
-        ]
-        elements.append(
-            _data_table(
-                ["Caso de uso", "O que protege", "Criticidade", "Situação"],
-                rows,
-                col_widths=[5.6 * cm, 6.4 * cm, 2.6 * cm, 2.8 * cm],
-            )
-        )
-    else:
-        elements.append(Paragraph("Nenhum caso de uso aplicável cadastrado.", _STYLES["Normal"]))
-    elements.append(Spacer(1, 0.6 * cm))
-    return elements
-
-
-def _framework_coverage(frameworks):
-    elements = [Paragraph("Cobertura por framework", _STYLES["Heading2"])]
-    if not frameworks:
-        elements += [Paragraph("Nenhum framework cadastrado.", _STYLES["Normal"]), Spacer(1, 0.6 * cm)]
-        return elements
-
-    for item in frameworks:
-        elements.append(
-            Paragraph(
-                f"{escape(item['framework'].name)}: {item['covered_count']} de {item['total']} controles cobertos",
-                _STYLES["Heading3"],
-            )
-        )
-        if item["controls"]:
-            rows = [
-                [control.code, _cell(control.name),
-                 _control_status(control.active_rules_count)]
-                for control in item["controls"]
-            ]
-            elements.append(
-                _data_table(["Código", "Controle", "Situação"], rows, col_widths=[2.6 * cm, 9.6 * cm, 5.2 * cm])
-            )
+    if pending_actions:
+        if pending_actions == 1:
+            sentences.append("1 ação pendente depende do seu lado para avançar.")
         else:
-            elements.append(Paragraph("Nenhum controle coberto por detecções ativas.", _STYLES["Normal"]))
-        if not item["lists_all"] and item["controls"]:
-            elements.append(Paragraph("Listados apenas os controles cobertos.", _NOTE_STYLE))
-        elements.append(Spacer(1, 0.3 * cm))
-    elements.append(Spacer(1, 0.3 * cm))
-    return elements
+            sentences.append(f"{pending_actions} ações pendentes dependem do seu lado para avançar.")
+
+    return " ".join(sentences)
 
 
-def _control_status(active_rules_count):
-    if not active_rules_count:
-        return "Não coberto"
-    noun = "detecção" if active_rules_count == 1 else "detecções"
-    return f"Coberto ({active_rules_count} {noun})"
+def _framework_bars(frameworks):
+    """% of controls covered per framework - the same numbers as the detailed
+    'Cobertura por framework' tables further down, rolled up into a one-line-per-
+    framework bar chart for the cover page."""
+    return [
+        {
+            "name": item["framework"].name,
+            "count": item["covered_count"],
+            "pct": round(item["covered_count"] / item["total"] * 100) if item["total"] else 0,
+        }
+        for item in frameworks
+    ]
 
 
-def _str_or_dash(value):
-    return _cell(str(value)) if value else "-"
+def _severity_bars(active_rules):
+    """How many active rules fall under each SOC severity, ordered by the
+    Severity catalog's own `weight` (taxonomy/02-modelo-de-dados.md §3.1) so
+    "Crítica" always leads regardless of which has the most rules."""
+    buckets = {}
+    for rule in active_rules:
+        severity = rule.severity
+        key = severity.pk if severity else None
+        if key not in buckets:
+            buckets[key] = {
+                "name": severity.name if severity else "Sem severidade",
+                "color": severity.color if severity else _COLOR_MUTED_LIGHT,
+                "weight": severity.weight if severity else -1,
+                "count": 0,
+            }
+        buckets[key]["count"] += 1
+
+    items = sorted(buckets.values(), key=lambda item: -item["weight"])
+    max_count = max((item["count"] for item in items), default=0)
+    for item in items:
+        item["pct"] = round(item["count"] / max_count * 100) if max_count else 0
+        del item["weight"]
+    return items
+
+
+def _donut_chart(percentage):
+    if percentage is None:
+        return {"percentage": None, "dasharray": f"0 {_DONUT_CIRCUMFERENCE:.1f}", "color": _COLOR_MUTED_LIGHT}
+    filled = _DONUT_CIRCUMFERENCE * percentage / 100
+    return {
+        "percentage": percentage,
+        "dasharray": f"{filled:.1f} {_DONUT_CIRCUMFERENCE:.1f}",
+        "color": _coverage_color(percentage),
+    }
+
+
+def _coverage_color(percentage):
+    if percentage is None:
+        return _COLOR_MUTED_LIGHT
+    if percentage >= 80:
+        return _COLOR_SUCCESS
+    if percentage >= 50:
+        return _COLOR_WARNING
+    return _COLOR_DANGER
+
+
+def _ratio_color(numerator, denominator):
+    if not denominator:
+        return _COLOR_MUTED_LIGHT
+    if numerator >= denominator:
+        return _COLOR_SUCCESS
+    if numerator == 0:
+        return _COLOR_DANGER
+    return _COLOR_WARNING
+
+
+def _zero_is_good_color(count):
+    return _COLOR_SUCCESS if count == 0 else _COLOR_DANGER
+
+
+def _criticality_bars(pairs):
+    """pairs: report['open_gaps_by_criticality'], e.g. [("Crítica", 3), ("Alta", 1)] -
+    turns counts into bar widths (% of the largest one) for the executive summary's
+    horizontal bar chart."""
+    if not pairs:
+        return []
+    max_count = max(count for _, count in pairs)
+    return [{"name": name, "count": count, "pct": round(count / max_count * 100)} for name, count in pairs]
+
+
+def _frameworks_context(frameworks):
+    """Adds a covered/label pair per control (for the badge in the template) without
+    mutating the FrameworkControl instances build_client_facing_report() returned."""
+    return [
+        {
+            "framework": item["framework"],
+            "total": item["total"],
+            "covered_count": item["covered_count"],
+            "lists_all": item["lists_all"],
+            "controls": [
+                {"code": control.code, "name": control.name, **_control_badge(control)}
+                for control in item["controls"]
+            ],
+        }
+        for item in frameworks
+    ]
+
+
+def _control_badge(control):
+    if not control.active_rules_count:
+        return {"covered": False, "label": "Não coberto"}
+    noun = "detecção" if control.active_rules_count == 1 else "detecções"
+    return {"covered": True, "label": f"Coberto ({control.active_rules_count} {noun})"}
 
 
 def _build_pdf(elements, title):
@@ -349,7 +351,7 @@ def _kv_table(rows):
             [
                 ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e3e5ec")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor(_COLOR_BORDER)),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
@@ -364,12 +366,12 @@ def _data_table(header, rows, col_widths):
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(_COLOR_PRIMARY)),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fc")]),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor(_COLOR_BORDER)),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(_COLOR_BG_LIGHT)]),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("TOPPADDING", (0, 0), (-1, -1), 3),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
