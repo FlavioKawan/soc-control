@@ -124,6 +124,32 @@ Configure SMTP no `.env` (`DJANGO_EMAIL_*`, `DJANGO_DEFAULT_FROM_EMAIL`,
 0 8 * * * cd /caminho/soc-control && docker compose exec -T web python manage.py send_digest >> /var/log/soc-control-digest.log 2>&1
 ```
 
+### Backup e restore do Postgres
+
+`docker/scripts/backup_db.sh` roda `pg_dump` dentro do container `postgres`
+(via `docker compose exec`) e grava um `.sql.gz` com timestamp em
+`./backups/` (apaga sozinho o que tem mais de 14 dias). Rode a partir da
+raiz do repositório:
+
+```bash
+./docker/scripts/backup_db.sh                  # usa ./backups e 14 dias de retenção
+./docker/scripts/backup_db.sh /mnt/backups 30   # diretório e retenção customizados
+```
+
+Agende no cron do host, do mesmo jeito que o digest:
+
+```cron
+0 3 * * * cd /caminho/soc-control && ./docker/scripts/backup_db.sh /mnt/backups 30 >> /var/log/soc-control-backup.log 2>&1
+```
+
+Para restaurar (**destrutivo**: apaga todos os dados atuais do banco antes
+de restaurar o dump — o script pede confirmação, a menos que você passe
+`-y`):
+
+```bash
+./docker/scripts/restore_db.sh /mnt/backups/soc_control-20261109-030000.sql.gz
+```
+
 ## 6. Deploy / atualização
 
 ```bash
@@ -136,10 +162,29 @@ Antes de expor em produção, confirme no `.env`:
 - `DJANGO_ALLOWED_HOSTS` e `DJANGO_CSRF_TRUSTED_ORIGINS` com o domínio real
 - `DJANGO_SECURE_SSL_REDIRECT=True`, `DJANGO_SESSION_COOKIE_SECURE=True`,
   `DJANGO_CSRF_COOKIE_SECURE=True` (com HTTPS na frente)
-- um `DJANGO_SECRET_KEY` longo e exclusivo
+- um `DJANGO_SECRET_KEY` longo e exclusivo, gerado com
+  `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`
+  (nunca reaproveite o do `.env` de desenvolvimento)
+- opcionalmente, `DJANGO_SENTRY_DSN` para rastreamento de erros (vazio = desativado)
 
-Também vale considerar um `docker-compose.prod.yml` sem o bind mount `.:/app`
-e rodar `python manage.py check --deploy`.
+Para um domínio público próprio com TLS, use `docker-compose.prod.yml` (sem
+o bind mount `.:/app`, com Nginx + Let's Encrypt via `certbot`) em vez do
+`docker-compose.yml` de desenvolvimento:
+
+```bash
+cp .env.example .env   # preencha domínio, SECRET_KEY, senha do banco, SMTP
+docker compose -f docker-compose.prod.yml up -d --build
+# primeira vez só, com o DNS do domínio já apontando para este servidor:
+docker compose -f docker-compose.prod.yml run --rm certbot certonly \
+  --webroot -w /var/www/certbot -d SEU_DOMINIO_AQUI \
+  --email voce@seudominio.com.br --agree-tos --no-eff-email
+docker compose -f docker-compose.prod.yml restart nginx
+```
+
+Substitua `SEU_DOMINIO_AQUI` em `docker/nginx/nginx.prod.conf` pelo domínio
+real antes do primeiro deploy. O container `certbot` renova o certificado
+automaticamente (checa a cada 12h). Também vale rodar
+`docker compose exec web python manage.py check --deploy` depois de subir.
 
 ## 7. Diagnóstico rápido
 
@@ -157,6 +202,7 @@ e rodar `python manage.py check --deploy`.
 | Cliente "desaparece" (404 ou some da lista) para um ANALYST/VIEWER | não está em `Client.assigned_users` - ADMIN/SOC_MANAGER não são afetados | editar o Cliente e adicionar o usuário em "Analistas com acesso" |
 | Container `web` não sobe / `ImportError` mencionando `weasyprint`, `pango` ou `cairo` | `docker/django/Dockerfile` sem as libs nativas do WeasyPrint (usado pelo relatório para o cliente, `reports/pdf.py`) | conferir que o Dockerfile instala `libpango-1.0-0 libpangocairo-1.0-0 libcairo2`; rebuild (`docker compose build web`) |
 | Relatório para o cliente em PDF com texto sem acento (caixas/quadrados no lugar de á, ã, ç) | falta `fonts-dejavu-core` na imagem (`python:3.13-slim` não vem com fonte nenhuma) | instalar o pacote no Dockerfile e rebuild |
+| `docker compose ps` mostra `web`/`nginx` como `unhealthy` | `GET /healthz/` (`core/views.py`) não respondeu 200 — app travou, ou banco inacessível (healthcheck faz `SELECT 1`) | `docker compose logs web`; confirmar que `postgres` está `healthy` |
 
 ## 8. Segurança — pentest interno
 

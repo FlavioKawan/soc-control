@@ -1,0 +1,96 @@
+# Standalone production compose file - deliberately NOT a merge overlay on
+# top of docker-compose.yml. Compose's merge rules for list-valued keys
+# (volumes, ports) are nuanced enough that overriding web's ".:/app" bind
+# mount that way is easy to get subtly wrong and ship dev's live-editable
+# source into prod by accident. A full, explicit file is unambiguous instead.
+#
+# Usage:
+#   cp .env.example .env   # fill in the real domain, SECRET_KEY, DB password, SMTP
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   # first time only, after DNS points at this host and port 80 is reachable:
+#   docker compose -f docker-compose.prod.yml run --rm certbot certonly \
+#     --webroot -w /var/www/certbot -d SEU_DOMINIO_AQUI \
+#     --email voce@seudominio.com.br --agree-tos --no-eff-email
+#   docker compose -f docker-compose.prod.yml restart nginx
+#
+# See docs/05-operacao-e-testes.md §6 for the full walkthrough.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/django/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/mediafiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz/', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/mediafiles:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Renews the TLS cert every 12h (certbot no-ops unless the cert is close to
+  # expiring). First issuance is the manual `run --rm certbot certonly ...`
+  # command above - this service only handles renewal of a cert that exists.
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h; done"
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+  certbot_certs:
+  certbot_www:

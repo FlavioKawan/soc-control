@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: soc_control
+          POSTGRES_USER: soc_control
+          POSTGRES_PASSWORD: soc_control
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U soc_control -d soc_control"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-key
+      DJANGO_DEBUG: "True"
+      POSTGRES_DB: soc_control
+      POSTGRES_USER: soc_control
+      POSTGRES_PASSWORD: soc_control
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Mesmas libs nativas do docker/django/Dockerfile (WeasyPrint).
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangocairo-1.0-0 libcairo2 \
+            libffi-dev shared-mime-info fonts-dejavu-core
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check for missing migrations
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run tests
+        run: python manage.py test
+
+      - name: Django deployment checklist (informational)
+        run: python manage.py check --deploy
+        continue-on-error: true

@@ -180,3 +180,16 @@ LOGGING = {
         "fontTools": {"level": "WARNING"},
     },
 }
+
+# Error tracking (opcional) - sem DSN, não inicializa nada (zero custo em dev).
+SENTRY_DSN = env("DJANGO_SENTRY_DSN", default="")
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        environment=env("DJANGO_SENTRY_ENVIRONMENT", default="production"),
+        send_default_pii=False,
+    )
