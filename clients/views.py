@@ -4,18 +4,21 @@ from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
 from .forms import ClientForm
+from .mixins import ClientScopedQuerysetMixin
 from .models import Client
+from .services import has_full_client_visibility
 
 
-class ClientListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class ClientListView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, ListView):
     model = Client
     permission_required = "clients.view_client"
     template_name = "clients/client_list.html"
     context_object_name = "clients"
     paginate_by = 25
+    client_lookup = "pk"
 
     def get_queryset(self):
-        qs = Client.objects.select_related("status")
+        qs = super().get_queryset().select_related("status")
         query = self.request.GET.get("q", "").strip()
         if query:
             qs = qs.filter(Q(name__icontains=query) | Q(legal_name__icontains=query))
@@ -30,11 +33,12 @@ class ClientListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return ctx
 
 
-class ClientDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class ClientDetailView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, DetailView):
     model = Client
     permission_required = "clients.view_client"
     template_name = "clients/client_detail.html"
     context_object_name = "client"
+    client_lookup = "pk"
 
     def get_context_data(self, **kwargs):
         from catalog.models import ImplementationTemplate
@@ -63,22 +67,42 @@ class ClientCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     permission_required = "clients.add_client"
     template_name = "clients/client_form.html"
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        # A restricted user who creates a client would otherwise lose
+        # access to it the moment the page reloads (assigned_users empty).
+        if not has_full_client_visibility(self.request.user):
+            self.object.assigned_users.add(self.request.user)
+        return response
+
     def get_success_url(self):
         return reverse_lazy("clients:client_detail", kwargs={"pk": self.object.pk})
 
 
-class ClientUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class ClientUpdateView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, UpdateView):
     model = Client
     form_class = ClientForm
     permission_required = "clients.change_client"
     template_name = "clients/client_form.html"
+    client_lookup = "pk"
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
     def get_success_url(self):
         return reverse_lazy("clients:client_detail", kwargs={"pk": self.object.pk})
 
 
-class ClientDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class ClientDeleteView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, DeleteView):
     model = Client
     permission_required = "clients.delete_client"
     template_name = "clients/client_confirm_delete.html"
     success_url = reverse_lazy("clients:client_list")
+    client_lookup = "pk"

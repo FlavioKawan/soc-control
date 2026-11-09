@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from taxonomy.models import Status
@@ -15,6 +16,15 @@ class Client(models.Model):
         verbose_name="Status",
     )
     notes = models.TextField("Observações", blank=True)
+    # ADMIN/SOC_MANAGER always see every client (clients.services.visible_clients);
+    # this only scopes ANALYST/VIEWER, who see nothing until assigned here.
+    assigned_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="assigned_clients",
+        verbose_name="Analistas com acesso",
+        help_text="Só vale para usuários ANALYST/VIEWER - ADMIN e SOC_MANAGER já veem todos os clientes.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

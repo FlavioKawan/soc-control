@@ -1,4 +1,5 @@
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 
@@ -163,3 +164,44 @@ class MalformedFilterParamTests(TestCase):
     def test_sql_injection_payload_in_client_param_does_not_crash(self):
         response = self.client.get(reverse("dashboard"), {"client": "1; DROP TABLE clients_client;"})
         self.assertEqual(response.status_code, 200)
+
+
+class ClientIsolationTests(TestCase):
+    """
+    Pentest finding (docs/05-operacao-e-testes.md §8): the Dashboard has no
+    permission_required at all, so every logged-in ANALYST/VIEWER saw
+    cards/charts/ranking aggregated over every client. build_dashboard's
+    allowed_clients restricts those aggregates to the user's own clients.
+    """
+
+    def setUp(self):
+        call_command("setup_roles")
+        self.mine = Client.objects.create(name="Acme Corp")
+        self.other = Client.objects.create(name="Globex")
+        technology = Technology.objects.create(name="Wazuh")
+        framework = Framework.objects.create(name="Cyber Kill Chain")
+        stage = FrameworkControl.objects.create(framework=framework, code="KC1", name="Reconhecimento")
+        rule_mine = Rule.objects.create(internal_id="SOC-001", name="Brute Force", client=self.mine, technology=technology)
+        rule_mine.framework_controls.add(stage)
+        rule_other = Rule.objects.create(internal_id="SOC-002", name="Brute Force", client=self.other, technology=technology)
+        rule_other.framework_controls.add(stage)
+
+        self.analyst = User.objects.create_user("analyst", password="x")
+        self.analyst.groups.add(Group.objects.get(name="ANALYST"))
+        self.mine.assigned_users.add(self.analyst)
+
+    def test_build_dashboard_excludes_unassigned_clients_when_restricted(self):
+        allowed = Client.objects.filter(pk=self.mine.pk)
+        data = build_dashboard(allowed_clients=allowed)
+        self.assertEqual(data["cards"]["total_rules"], 1)
+
+    def test_build_dashboard_ranks_only_among_allowed_clients(self):
+        allowed = Client.objects.filter(pk=self.mine.pk)
+        ranking = build_dashboard(allowed_clients=allowed)["client_ranking"]
+        self.assertEqual([row["client"] for row in ranking], [self.mine])
+
+    def test_dashboard_view_scopes_client_dropdown_and_cards_for_an_analyst(self):
+        self.client.force_login(self.analyst)
+        response = self.client.get(reverse("dashboard"))
+        self.assertEqual(list(response.context["clients"]), [self.mine])
+        self.assertEqual(response.context["cards"]["total_rules"], 1)

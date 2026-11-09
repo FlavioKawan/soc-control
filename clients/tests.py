@@ -8,6 +8,7 @@ from taxonomy.models import Status
 
 from .forms import ClientForm
 from .models import Client
+from .services import has_full_client_visibility, visible_clients
 
 
 class ClientModelTests(TestCase):
@@ -78,6 +79,64 @@ class ClientPermissionTests(TestCase):
     def test_anonymous_is_redirected_to_login(self):
         response = self.client.get(reverse("clients:client_list"))
         self.assertEqual(response.status_code, 302)
+
+
+class ClientIsolationTests(TestCase):
+    """
+    Pentest finding (docs/05-operacao-e-testes.md §8): any authenticated
+    user with view_client saw every client. ADMIN/SOC_MANAGER still do by
+    design - only ANALYST/VIEWER are scoped to Client.assigned_users.
+    """
+
+    def setUp(self):
+        call_command("setup_roles")
+        self.mine = Client.objects.create(name="Acme Corp")
+        self.other = Client.objects.create(name="Globex")
+        self.analyst = User.objects.create_user("analyst", password="x")
+        self.analyst.groups.add(Group.objects.get(name="ANALYST"))
+        self.mine.assigned_users.add(self.analyst)
+
+    def test_manager_and_superuser_have_full_visibility_without_assignment(self):
+        manager = User.objects.create_user("manager", password="x")
+        manager.groups.add(Group.objects.get(name="SOC_MANAGER"))
+        self.assertTrue(has_full_client_visibility(manager))
+        self.assertEqual(visible_clients(manager).count(), 2)
+
+        superuser = User.objects.create_superuser("root", "root@example.com", "x")
+        self.assertEqual(visible_clients(superuser).count(), 2)
+
+    def test_analyst_without_assignment_sees_nothing(self):
+        lonely = User.objects.create_user("lonely", password="x")
+        lonely.groups.add(Group.objects.get(name="ANALYST"))
+        self.assertEqual(visible_clients(lonely).count(), 0)
+
+    def test_analyst_list_view_only_shows_assigned_clients(self):
+        self.client.force_login(self.analyst)
+        response = self.client.get(reverse("clients:client_list"))
+        self.assertEqual([c.name for c in response.context["clients"]], ["Acme Corp"])
+
+    def test_analyst_detail_view_404s_on_unassigned_client(self):
+        self.client.force_login(self.analyst)
+        response = self.client.get(reverse("clients:client_detail", kwargs={"pk": self.other.pk}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_analyst_detail_view_200s_on_assigned_client(self):
+        self.client.force_login(self.analyst)
+        response = self.client.get(reverse("clients:client_detail", kwargs={"pk": self.mine.pk}))
+        self.assertEqual(response.status_code, 200)
+
+    def test_analyst_who_creates_a_client_is_auto_assigned_to_it(self):
+        self.client.force_login(self.analyst)
+        self.client.post(reverse("clients:client_create"), {"name": "Nova Co", "legal_name": "", "notes": ""})
+        created = Client.objects.get(name="Nova Co")
+        self.assertIn(self.analyst, created.assigned_users.all())
+
+    def test_only_full_visibility_users_can_edit_assignments(self):
+        manager = User.objects.create_user("manager2", password="x")
+        manager.groups.add(Group.objects.get(name="SOC_MANAGER"))
+
+        self.assertIn("assigned_users", ClientForm(user=manager).fields)
+        self.assertNotIn("assigned_users", ClientForm(user=self.analyst).fields)
 
 
 class ClientListSearchTests(TestCase):

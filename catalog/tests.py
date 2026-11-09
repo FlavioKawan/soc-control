@@ -316,3 +316,27 @@ class TemplatePermissionTests(TestCase):
             {"template": self.template.pk},
         )
         self.assertEqual(response.status_code, 302)
+
+
+class ClientIsolationTests(TestCase):
+    """Same isolation as detections/gaps (docs/05-operacao-e-testes.md §8),
+    applied to the per-client catalog screens."""
+
+    def setUp(self):
+        call_command("setup_roles")
+        self.other = Client.objects.create(name="Globex")
+        self.analyst = User.objects.create_user("analyst", password="x")
+        self.analyst.groups.add(Group.objects.get(name="ANALYST"))
+        self.client.force_login(self.analyst)
+
+    def test_client_log_source_create_404s_for_an_unassigned_client(self):
+        response = self.client.get(
+            reverse("catalog:clientlogsource_create", kwargs={"client_pk": self.other.pk})
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_client_use_case_create_404s_for_an_unassigned_client(self):
+        response = self.client.get(
+            reverse("catalog:clientusecase_create", kwargs={"client_pk": self.other.pk})
+        )
+        self.assertEqual(response.status_code, 404)

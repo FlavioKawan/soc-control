@@ -153,3 +153,33 @@ class ResponsiblePartyCatalogTests(TestCase):
         admin_user = User.objects.create_user("admin5", password="x")
         admin_user.groups.add(Group.objects.get(name="ADMIN"))
         self.assertTrue(admin_user.has_perm("taxonomy.add_responsibleparty"))
+
+
+class ClientIsolationTests(TestCase):
+    """Same isolation as detections (docs/05-operacao-e-testes.md §8),
+    applied to Gap."""
+
+    def setUp(self):
+        call_command("setup_roles")
+        self.mine = Client.objects.create(name="Acme Corp")
+        self.other = Client.objects.create(name="Globex")
+        self.my_gap = Gap.objects.create(code="GAP-001", client=self.mine, title="DNS sem log")
+        self.other_gap = Gap.objects.create(code="GAP-002", client=self.other, title="EDR sem log")
+        self.analyst = User.objects.create_user("analyst", password="x")
+        self.analyst.groups.add(Group.objects.get(name="ANALYST"))
+        self.mine.assigned_users.add(self.analyst)
+
+    def test_list_view_excludes_gaps_from_unassigned_clients(self):
+        self.client.force_login(self.analyst)
+        response = self.client.get(reverse("gaps:gap_list"))
+        self.assertEqual(list(response.context["gaps"]), [self.my_gap])
+
+    def test_detail_view_404s_for_a_gap_of_an_unassigned_client(self):
+        self.client.force_login(self.analyst)
+        response = self.client.get(reverse("gaps:gap_detail", kwargs={"pk": self.other_gap.pk}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_form_cannot_target_an_unassigned_client(self):
+        form = GapForm(user=self.analyst)
+        self.assertIn(self.mine, form.fields["client"].queryset)
+        self.assertNotIn(self.other, form.fields["client"].queryset)

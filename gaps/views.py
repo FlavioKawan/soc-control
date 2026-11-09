@@ -3,11 +3,13 @@ from django.db.models import Q
 from django.urls import reverse, reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
+from clients.mixins import ClientScopedQuerysetMixin
+
 from .forms import GapFilterForm, GapForm
 from .models import Gap
 
 
-class GapListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class GapListView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, ListView):
     model = Gap
     permission_required = "gaps.view_gap"
     template_name = "gaps/gap_list.html"
@@ -15,8 +17,8 @@ class GapListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        self.filter_form = GapFilterForm(self.request.GET or None)
-        qs = Gap.objects.select_related("client", "status", "criticality", "responsible_party")
+        self.filter_form = GapFilterForm(self.request.GET or None, user=self.request.user)
+        qs = super().get_queryset().select_related("client", "status", "criticality", "responsible_party")
 
         if self.filter_form.is_valid():
             data = self.filter_form.cleaned_data
@@ -38,7 +40,7 @@ class GapListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return ctx
 
 
-class GapDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class GapDetailView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, DetailView):
     model = Gap
     permission_required = "gaps.view_gap"
     template_name = "gaps/gap_detail.html"
@@ -68,21 +70,31 @@ class GapCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
             initial["client"] = client_id
         return initial
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def get_success_url(self):
         return reverse("gaps:gap_detail", kwargs={"pk": self.object.pk})
 
 
-class GapUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class GapUpdateView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, UpdateView):
     model = Gap
     form_class = GapForm
     permission_required = "gaps.change_gap"
     template_name = "gaps/gap_form.html"
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def get_success_url(self):
         return reverse("gaps:gap_detail", kwargs={"pk": self.object.pk})
 
 
-class GapDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class GapDeleteView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, DeleteView):
     model = Gap
     permission_required = "gaps.delete_gap"
     template_name = "gaps/gap_confirm_delete.html"

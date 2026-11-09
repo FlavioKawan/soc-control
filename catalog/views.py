@@ -6,7 +6,8 @@ from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
-from clients.models import Client
+from clients.mixins import ClientScopedQuerysetMixin
+from clients.services import visible_clients
 from core.mixins import ProtectedDeleteMixin
 
 from .forms import (
@@ -82,7 +83,7 @@ class ClientLogSourceFormMixin:
 
     def dispatch(self, request, *args, **kwargs):
         client_pk = kwargs.get("client_pk") or self._client_pk_from_object(kwargs)
-        self.client_obj = get_object_or_404(Client, pk=client_pk)
+        self.client_obj = get_object_or_404(visible_clients(request.user), pk=client_pk)
         return super().dispatch(request, *args, **kwargs)
 
     def _client_pk_from_object(self, kwargs):
@@ -119,7 +120,7 @@ class ClientLogSourceUpdateView(
     permission_required = "catalog.change_clientlogsource"
 
 
-class ClientLogSourceDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class ClientLogSourceDeleteView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, DeleteView):
     model = ClientLogSource
     permission_required = "catalog.delete_clientlogsource"
     template_name = "catalog/clientlogsource_confirm_delete.html"
@@ -186,7 +187,7 @@ class ClientUseCaseFormMixin:
 
     def dispatch(self, request, *args, **kwargs):
         client_pk = kwargs.get("client_pk") or self._client_pk_from_object(kwargs)
-        self.client_obj = get_object_or_404(Client, pk=client_pk)
+        self.client_obj = get_object_or_404(visible_clients(request.user), pk=client_pk)
         return super().dispatch(request, *args, **kwargs)
 
     def _client_pk_from_object(self, kwargs):
@@ -223,7 +224,7 @@ class ClientUseCaseUpdateView(
     permission_required = "catalog.change_clientusecase"
 
 
-class ClientUseCaseDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class ClientUseCaseDeleteView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, DeleteView):
     model = ClientUseCase
     permission_required = "catalog.delete_clientusecase"
     template_name = "catalog/clientusecase_confirm_delete.html"
@@ -362,7 +363,7 @@ class ApplyTemplateView(LoginRequiredMixin, PermissionRequiredMixin, View):
     permission_required = "catalog.add_clientusecase"
 
     def post(self, request, client_pk):
-        client_obj = get_object_or_404(Client, pk=client_pk)
+        client_obj = get_object_or_404(visible_clients(request.user), pk=client_pk)
         template = get_object_or_404(ImplementationTemplate, pk=request.POST.get("template"))
         result = apply_template_to_client(template, client_obj)
         messages.success(

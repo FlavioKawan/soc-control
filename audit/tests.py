@@ -156,3 +156,40 @@ class AuditLogPermissionAndListViewTests(TestCase):
         self.assertFalse(admin_user.has_perm("audit.add_auditlog"))
         self.assertFalse(admin_user.has_perm("audit.change_auditlog"))
         self.assertFalse(admin_user.has_perm("audit.delete_auditlog"))
+
+
+class ClientIsolationTests(TestCase):
+    """
+    Pentest finding (docs/05-operacao-e-testes.md §8): ANALYST/VIEWER have
+    audit.view_auditlog and could see every client's history. Entries with
+    client=None (changes to global catalogs) stay visible - they aren't
+    any specific client's data.
+    """
+
+    def setUp(self):
+        call_command("setup_roles")
+        self.mine = Client.objects.create(name="Acme Corp")
+        self.other = Client.objects.create(name="Globex")
+        self.mine_entry = AuditLog.objects.create(
+            action=AuditLog.Action.CREATE, app_label="clients", model_name="client",
+            object_id=str(self.mine.pk), object_repr="Acme Corp", client=self.mine,
+        )
+        self.other_entry = AuditLog.objects.create(
+            action=AuditLog.Action.CREATE, app_label="clients", model_name="client",
+            object_id=str(self.other.pk), object_repr="Globex", client=self.other,
+        )
+        self.global_entry = AuditLog.objects.create(
+            action=AuditLog.Action.CREATE, app_label="catalog", model_name="usecase",
+            object_id="1", object_repr="UC-001", client=None,
+        )
+        self.analyst = User.objects.create_user("analyst", password="x")
+        self.analyst.groups.add(Group.objects.get(name="ANALYST"))
+        self.mine.assigned_users.add(self.analyst)
+        self.client.force_login(self.analyst)
+
+    def test_list_excludes_entries_of_unassigned_clients_but_keeps_global_ones(self):
+        response = self.client.get(reverse("audit:auditlog_list"))
+        entries = list(response.context["entries"])
+        self.assertIn(self.mine_entry, entries)
+        self.assertIn(self.global_entry, entries)
+        self.assertNotIn(self.other_entry, entries)

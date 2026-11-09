@@ -10,15 +10,19 @@ class AuditLogFilterForm(forms.Form):
     model_name = forms.ChoiceField(required=False, label="Entidade")
     user = forms.ModelChoiceField(queryset=None, required=False, label="Usuário")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         from django.contrib.auth import get_user_model
 
         from clients.models import Client
+        from clients.services import visible_clients
 
         from .signals import TRACKED_MODELS
 
-        self.fields["client"].queryset = Client.objects.all()
+        # Not a security boundary by itself (AuditLogListView's base
+        # queryset is already client-scoped) - just keeps other clients'
+        # names out of a restricted user's filter dropdown.
+        self.fields["client"].queryset = visible_clients(user) if user is not None else Client.objects.all()
         self.fields["user"].queryset = get_user_model().objects.order_by("username")
         self.fields["model_name"].choices = [("", "Todas")] + [
             (model._meta.model_name, model._meta.verbose_name.title()) for model in TRACKED_MODELS

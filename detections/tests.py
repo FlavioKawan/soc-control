@@ -410,3 +410,66 @@ class OpenRedirectTests(TestCase):
             {"columns": ["internal_id"], "next": "//evil.example/phish"},
         )
         self.assertEqual(response["Location"], reverse("detections:rule_list"))
+
+
+class ClientIsolationTests(TestCase):
+    """
+    Pentest finding (docs/05-operacao-e-testes.md §8): an ANALYST/VIEWER
+    saw rules from every client. Only ADMIN/SOC_MANAGER keep full
+    visibility - see clients/services.py::has_full_client_visibility.
+    """
+
+    def setUp(self):
+        call_command("setup_roles")
+        self.mine = Client.objects.create(name="Acme Corp")
+        self.other = Client.objects.create(name="Globex")
+        self.technology = Technology.objects.create(name="Wazuh")
+        self.my_rule = Rule.objects.create(
+            internal_id="SOC-001", name="Brute Force", client=self.mine, technology=self.technology
+        )
+        self.other_rule = Rule.objects.create(
+            internal_id="SOC-002", name="Password Spray", client=self.other, technology=self.technology
+        )
+        self.analyst = User.objects.create_user("analyst", password="x")
+        self.analyst.groups.add(Group.objects.get(name="ANALYST"))
+        self.mine.assigned_users.add(self.analyst)
+
+    def test_list_view_excludes_rules_from_unassigned_clients(self):
+        self.client.force_login(self.analyst)
+        response = self.client.get(reverse("detections:rule_list"))
+        self.assertEqual(list(response.context["rules"]), [self.my_rule])
+
+    def test_detail_view_404s_for_a_rule_of_an_unassigned_client(self):
+        self.client.force_login(self.analyst)
+        response = self.client.get(reverse("detections:rule_detail", kwargs={"pk": self.other_rule.pk}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_create_form_cannot_target_an_unassigned_client(self):
+        form = RuleForm(user=self.analyst)
+        self.assertIn(self.mine, form.fields["client"].queryset)
+        self.assertNotIn(self.other, form.fields["client"].queryset)
+
+    def test_csv_import_rejects_a_client_outside_the_users_access(self):
+        csv_text = "rule_id,name,client,technology\nSOC-003,New Rule,Globex,Wazuh\n"
+        report = import_rules_from_csv(
+            io.BytesIO(csv_text.encode("utf-8")), allowed_clients=Client.objects.filter(pk=self.mine.pk)
+        )
+        self.assertEqual(report["created"], 0)
+        self.assertEqual(len(report["errors"]), 1)
+
+    def test_csv_import_cannot_take_over_an_existing_rule_of_another_client(self):
+        """
+        Without this check, update_or_create(internal_id=...) would move
+        SOC-002 (Globex's rule) into Acme Corp just because the importing
+        user can see Acme Corp - a privilege-escalation path, not just a
+        read leak.
+        """
+        csv_text = "rule_id,name,client,technology\nSOC-002,Hijacked,Acme Corp,Wazuh\n"
+        report = import_rules_from_csv(
+            io.BytesIO(csv_text.encode("utf-8")), allowed_clients=Client.objects.filter(pk=self.mine.pk)
+        )
+        self.assertEqual(report["created"], 0)
+        self.assertEqual(report["updated"], 0)
+        self.assertEqual(len(report["errors"]), 1)
+        self.other_rule.refresh_from_db()
+        self.assertEqual(self.other_rule.client_id, self.other.pk)

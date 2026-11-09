@@ -5,6 +5,8 @@ from django.db.models import Q
 
 from core.forms import BootstrapModelForm
 from catalog.models import LogSource, UseCase
+from clients.models import Client
+from clients.services import has_full_client_visibility, visible_clients
 from taxonomy.choices import CategoryScope, StatusScope
 from taxonomy.models import Category, Framework, FrameworkControl, RuleType, Severity, Status, Tag, Technology
 
@@ -25,8 +27,12 @@ class RuleForm(BootstrapModelForm):
             "next_review_at": forms.DateInput(attrs={"type": "date"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        # A restricted ANALYST/VIEWER can only create/move a rule into a
+        # client they're assigned to - not just any client in the system.
+        if user is not None and not has_full_client_visibility(user):
+            self.fields["client"].queryset = visible_clients(user)
         self.fields["category"].queryset = Category.objects.filter(
             applicable_to__contains=[CategoryScope.RULE]
         )
@@ -71,11 +77,12 @@ class RuleFilterForm(forms.Form):
         choices=[("", "Todas"), ("overdue", "Revisão pendente"), ("undated", "Sem data definida")],
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        from clients.models import Client
-
-        self.fields["client"].queryset = Client.objects.all()
+        # Not a security boundary by itself (RuleListView's base queryset is
+        # already client-scoped) - just keeps other clients' names out of a
+        # restricted user's filter dropdown.
+        self.fields["client"].queryset = visible_clients(user) if user is not None else Client.objects.all()
         self.fields["technology"].queryset = Technology.objects.all()
         self.fields["status"].queryset = Status.objects.filter(scope__contains=[StatusScope.RULE])
         self.fields["severity"].queryset = Severity.objects.all()

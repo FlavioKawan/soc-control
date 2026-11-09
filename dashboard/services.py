@@ -47,12 +47,23 @@ def _grouped(queryset, name_field, color_field=None, palette=False):
     return result
 
 
-def build_dashboard(client=None, technology=None):
+def build_dashboard(client=None, technology=None, allowed_clients=None):
+    """
+    allowed_clients, when not None, restricts every aggregate below to a
+    restricted ANALYST/VIEWER's own assigned clients
+    (clients.services.visible_clients) - None means "no restriction"
+    (ADMIN/SOC_MANAGER).
+    """
     rule_qs = Rule.objects.all()
     cuc_qs = ClientUseCase.objects.all()
     gap_qs = Gap.objects.all()
     cls_qs = ClientLogSource.objects.all()
 
+    if allowed_clients is not None:
+        rule_qs = rule_qs.filter(client__in=allowed_clients)
+        cuc_qs = cuc_qs.filter(client__in=allowed_clients)
+        gap_qs = gap_qs.filter(client__in=allowed_clients)
+        cls_qs = cls_qs.filter(client__in=allowed_clients)
     if client:
         rule_qs = rule_qs.filter(client=client)
         cuc_qs = cuc_qs.filter(client=client)
@@ -128,7 +139,7 @@ def build_dashboard(client=None, technology=None):
     client_ranking = None
     if client is None:
         layer_maturity = _combined_layer_maturity(layer_widgets)
-        client_ranking = _client_layer_ranking(layer_widgets, technology)
+        client_ranking = _client_layer_ranking(layer_widgets, technology, allowed_clients)
 
     return {
         "cards": cards,
@@ -152,12 +163,13 @@ def _combined_layer_maturity(layer_widgets):
     return {"covered": covered, "total": total, "percentage": round(100 * covered / total)}
 
 
-def _client_layer_ranking(layer_widgets, technology, limit=CLIENT_RANKING_SIZE):
+def _client_layer_ranking(layer_widgets, technology, allowed_clients=None, limit=CLIENT_RANKING_SIZE):
     """
     Top clients by the same combined layer coverage _combined_layer_maturity
     computes for "everyone" - answers "who are we protecting best/worst".
     One query for every (client, control) pair tagged under a tracked
-    layer, instead of one query per client per layer.
+    layer, instead of one query per client per layer. allowed_clients, when
+    not None, ranks only among a restricted ANALYST/VIEWER's own clients.
     """
     layer_by_control = {}
     total_layers = 0
@@ -174,11 +186,14 @@ def _client_layer_ranking(layer_widgets, technology, limit=CLIENT_RANKING_SIZE):
     tagged_rules = Rule.objects.filter(framework_controls__id__in=layer_by_control)
     if technology:
         tagged_rules = tagged_rules.filter(technology=technology)
+    if allowed_clients is not None:
+        tagged_rules = tagged_rules.filter(client__in=allowed_clients)
 
     covered_layers_by_client = defaultdict(set)
     for client_id, control_id in tagged_rules.values_list("client_id", "framework_controls__id").distinct():
         covered_layers_by_client[client_id].add(layer_by_control[control_id])
 
+    candidates_qs = Client.objects.all() if allowed_clients is None else allowed_clients
     ranking = [
         {
             "client": candidate,
@@ -186,7 +201,7 @@ def _client_layer_ranking(layer_widgets, technology, limit=CLIENT_RANKING_SIZE):
             "total": total_layers,
             "percentage": round(100 * len(covered_layers_by_client.get(candidate.pk, ())) / total_layers),
         }
-        for candidate in Client.objects.all()
+        for candidate in candidates_qs
     ]
     ranking.sort(key=lambda row: (-row["percentage"], row["client"].name))
     return ranking[:limit]

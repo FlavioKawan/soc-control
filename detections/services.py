@@ -75,7 +75,7 @@ REQUIRED_CSV_COLUMNS = {"rule_id", "name", "client", "technology"}
 MAX_CSV_ROWS = 5000
 
 
-def import_rules_from_csv(file_obj):
+def import_rules_from_csv(file_obj, allowed_clients=None):
     """
     Expects a UTF-8 CSV with at least: rule_id, name, client, technology.
     Optional columns: log_source, level, severity, status, description.
@@ -83,6 +83,11 @@ def import_rules_from_csv(file_obj):
     Matches existing rules by rule_id (-> internal_id): creates new ones,
     updates existing ones. Each row runs in its own transaction, so one bad
     row is reported and skipped instead of aborting the whole file.
+
+    allowed_clients, when not None, restricts which clients a row may
+    reference - a restricted ANALYST/VIEWER importing a CSV shouldn't be
+    able to create (or silently take over) rules for a client outside
+    their assignment (clients.services.visible_clients).
     """
     decoded = io.TextIOWrapper(file_obj, encoding="utf-8-sig")
     reader = csv.DictReader(decoded)
@@ -108,14 +113,14 @@ def import_rules_from_csv(file_obj):
             break
         try:
             with transaction.atomic():
-                _import_row(row, index, report)
+                _import_row(row, index, report, allowed_clients)
         except Exception as exc:
             report["errors"].append({"row": index, "message": str(exc)})
 
     return report
 
 
-def _import_row(row, index, report):
+def _import_row(row, index, report, allowed_clients=None):
     from catalog.models import LogSource
 
     internal_id = (row.get("rule_id") or "").strip()
@@ -126,9 +131,17 @@ def _import_row(row, index, report):
     if not internal_id or not name or not client_name or not technology_name:
         raise ValueError("rule_id, name, client e technology são obrigatórios.")
 
-    client = Client.objects.filter(name__iexact=client_name).first()
+    client_qs = Client.objects.all() if allowed_clients is None else allowed_clients
+    client = client_qs.filter(name__iexact=client_name).first()
     if client is None:
         raise ValueError(f'Cliente "{client_name}" não encontrado.')
+
+    existing = Rule.objects.filter(internal_id=internal_id).select_related("client").first()
+    if existing and allowed_clients is not None and not allowed_clients.filter(pk=existing.client_id).exists():
+        # update_or_create below would otherwise silently move an existing
+        # rule - that belongs to a client outside this user's access - into
+        # one of their own clients.
+        raise ValueError(f'Regra "{internal_id}" já existe em outro cliente fora do seu acesso.')
 
     technology = Technology.objects.filter(name__iexact=technology_name).first()
     if technology is None:

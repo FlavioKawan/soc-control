@@ -1,6 +1,7 @@
 from django import forms
 from django.db.models import Q
 
+from clients.services import has_full_client_visibility, visible_clients
 from core.forms import BootstrapModelForm
 from taxonomy.choices import StatusScope
 from taxonomy.models import ResponsibleParty, Severity, Status
@@ -21,8 +22,12 @@ class GapForm(BootstrapModelForm):
             "closed_at": forms.DateInput(attrs={"type": "date"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        # A restricted ANALYST/VIEWER can only open a gap for a client
+        # they're assigned to.
+        if user is not None and not has_full_client_visibility(user):
+            self.fields["client"].queryset = visible_clients(user)
         self.fields["status"].queryset = Status.objects.filter(
             Q(scope__contains=[StatusScope.GAP]) & Q(is_active=True) | Q(pk=self.instance.status_id)
         )
@@ -53,11 +58,14 @@ class GapFilterForm(forms.Form):
     criticality = forms.ModelChoiceField(queryset=None, required=False, label="Criticidade")
     responsible_party = forms.ModelChoiceField(queryset=None, required=False, label="Responsável")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         from clients.models import Client
 
-        self.fields["client"].queryset = Client.objects.all()
+        # Not a security boundary by itself (GapListView's base queryset is
+        # already client-scoped) - just keeps other clients' names out of a
+        # restricted user's filter dropdown.
+        self.fields["client"].queryset = visible_clients(user) if user is not None else Client.objects.all()
         self.fields["status"].queryset = Status.objects.filter(scope__contains=[StatusScope.GAP])
         self.fields["criticality"].queryset = Severity.objects.all()
         self.fields["responsible_party"].queryset = ResponsibleParty.objects.all()

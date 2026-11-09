@@ -7,6 +7,8 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, FormView, ListView, UpdateView
 
+from clients.mixins import ClientScopedQuerysetMixin
+from clients.services import has_full_client_visibility, visible_clients
 from core.utils import parse_int_or_none
 from taxonomy.models import FrameworkControl
 from taxonomy.services import control_and_descendant_ids
@@ -16,7 +18,7 @@ from .models import AVAILABLE_RULE_COLUMNS, DEFAULT_RULE_COLUMNS, Rule, RuleColu
 from .services import import_rules_from_csv, rule_is_possibly_inoperative, rule_is_review_overdue
 
 
-class RuleListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+class RuleListView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, ListView):
     model = Rule
     permission_required = "detections.view_rule"
     template_name = "detections/rule_list.html"
@@ -24,8 +26,8 @@ class RuleListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        self.filter_form = RuleFilterForm(self.request.GET or None)
-        qs = Rule.objects.select_related(
+        self.filter_form = RuleFilterForm(self.request.GET or None, user=self.request.user)
+        qs = super().get_queryset().select_related(
             "client", "technology", "severity", "status", "log_source", "rule_type", "category"
         ).prefetch_related("tags", "framework_controls__framework")
 
@@ -99,7 +101,7 @@ class RuleListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return ctx
 
 
-class RuleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
+class RuleDetailView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, DetailView):
     model = Rule
     permission_required = "detections.view_rule"
     template_name = "detections/rule_detail.html"
@@ -125,21 +127,31 @@ class RuleCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     permission_required = "detections.add_rule"
     template_name = "detections/rule_form.html"
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def get_success_url(self):
         return reverse("detections:rule_detail", kwargs={"pk": self.object.pk})
 
 
-class RuleUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class RuleUpdateView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, UpdateView):
     model = Rule
     form_class = RuleForm
     permission_required = "detections.change_rule"
     template_name = "detections/rule_form.html"
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def get_success_url(self):
         return reverse("detections:rule_detail", kwargs={"pk": self.object.pk})
 
 
-class RuleDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
+class RuleDeleteView(LoginRequiredMixin, PermissionRequiredMixin, ClientScopedQuerysetMixin, DeleteView):
     model = Rule
     permission_required = "detections.delete_rule"
     template_name = "detections/rule_confirm_delete.html"
@@ -168,5 +180,6 @@ class RuleImportView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     template_name = "detections/rule_import.html"
 
     def form_valid(self, form):
-        report = import_rules_from_csv(form.cleaned_data["file"])
+        allowed_clients = None if has_full_client_visibility(self.request.user) else visible_clients(self.request.user)
+        report = import_rules_from_csv(form.cleaned_data["file"], allowed_clients=allowed_clients)
         return self.render_to_response(self.get_context_data(form=self.form_class(), report=report))

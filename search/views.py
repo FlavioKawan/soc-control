@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.views import View
 
 from catalog.models import LogSource, UseCase
-from clients.models import Client
+from clients.services import visible_clients
 from detections.models import Rule
 from gaps.models import Gap
 
@@ -62,7 +62,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
         return render(request, self.template_name, context)
 
     def _client_results(self, query):
-        qs = Client.objects.filter(
+        qs = visible_clients(self.request.user).filter(
             Q(name__icontains=query) | Q(legal_name__icontains=query)
         ).select_related("status")
         return {
@@ -81,7 +81,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
         }
 
     def _rule_results(self, query):
-        qs = Rule.objects.filter(
+        qs = Rule.objects.filter(client__in=visible_clients(self.request.user)).filter(
             Q(internal_id__icontains=query)
             | Q(name__icontains=query)
             | Q(vendor_rule_id__icontains=query)
@@ -103,7 +103,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
         }
 
     def _gap_results(self, query):
-        qs = Gap.objects.filter(
+        qs = Gap.objects.filter(client__in=visible_clients(self.request.user)).filter(
             Q(code__icontains=query) | Q(title__icontains=query) | Q(description__icontains=query)
         ).select_related("client")
         return {

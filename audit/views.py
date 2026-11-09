@@ -2,6 +2,8 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.db.models import Q
 from django.views.generic import ListView
 
+from clients.services import has_full_client_visibility, visible_clients
+
 from .forms import AuditLogFilterForm
 from .models import AuditLog
 
@@ -14,8 +16,15 @@ class AuditLogListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        self.filter_form = AuditLogFilterForm(self.request.GET or None)
+        self.filter_form = AuditLogFilterForm(self.request.GET or None, user=self.request.user)
         qs = AuditLog.objects.select_related("user", "client")
+
+        # client=NULL entries are changes to non-client-scoped catalogs
+        # (UseCase, LogSource, Framework...), not any specific client's
+        # data - a restricted ANALYST/VIEWER keeps seeing those, only
+        # entries tied to a client outside their assignment are hidden.
+        if not has_full_client_visibility(self.request.user):
+            qs = qs.filter(Q(client__isnull=True) | Q(client__in=visible_clients(self.request.user)))
 
         if self.filter_form.is_valid():
             data = self.filter_form.cleaned_data

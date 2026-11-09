@@ -86,3 +86,35 @@ class GlobalSearchPermissionScopingTests(TestCase):
 
         response = self.client.get(reverse("search:results"), {"q": "Acme"})
         self.assertEqual(response.context["categories"], [])
+
+
+class ClientIsolationTests(TestCase):
+    """Global search must not leak another client's rules/gaps/name to a
+    restricted ANALYST/VIEWER (docs/05-operacao-e-testes.md §8)."""
+
+    def setUp(self):
+        call_command("setup_roles")
+        self.mine = Client.objects.create(name="Acme Corp")
+        self.other = Client.objects.create(name="Globex")
+        technology = Technology.objects.create(name="Wazuh")
+        Rule.objects.create(internal_id="SOC-001", name="Brute Force", client=self.mine, technology=technology)
+        Rule.objects.create(internal_id="SOC-002", name="Brute Force", client=self.other, technology=technology)
+        Gap.objects.create(code="GAP-001", client=self.mine, title="Brute Force gap")
+        Gap.objects.create(code="GAP-002", client=self.other, title="Brute Force gap")
+
+        self.analyst = User.objects.create_user("analyst", password="x")
+        self.analyst.groups.add(Group.objects.get(name="ANALYST"))
+        self.mine.assigned_users.add(self.analyst)
+        self.client.force_login(self.analyst)
+
+    def test_client_results_exclude_unassigned_clients(self):
+        response = self.client.get(reverse("search:results"), {"q": "Globex"})
+        clients_category = next(c for c in response.context["categories"] if c["label"] == "Clientes")
+        self.assertEqual(clients_category["total"], 0)
+
+    def test_rule_and_gap_results_exclude_unassigned_clients(self):
+        response = self.client.get(reverse("search:results"), {"q": "Brute Force"})
+        rules_category = next(c for c in response.context["categories"] if c["label"] == "Regras")
+        gaps_category = next(c for c in response.context["categories"] if c["label"] == "Gaps")
+        self.assertEqual(rules_category["total"], 1)
+        self.assertEqual(gaps_category["total"], 1)

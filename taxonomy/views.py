@@ -133,12 +133,12 @@ class FrameworkDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailVie
     context_object_name = "framework"
 
     def get_context_data(self, **kwargs):
-        from clients.models import Client
+        from clients.services import visible_clients
 
         ctx = super().get_context_data(**kwargs)
         ctx["controls"] = self.object.controls.select_related("parent").all()
         ctx["can_manage_controls"] = self.request.user.has_perm("taxonomy.add_frameworkcontrol")
-        ctx["all_clients"] = Client.objects.all()
+        ctx["all_clients"] = visible_clients(self.request.user)
         return ctx
 
 
@@ -179,7 +179,7 @@ class FrameworkNavigatorExportView(LoginRequiredMixin, PermissionRequiredMixin, 
     permission_required = "taxonomy.view_framework"
 
     def get(self, request, pk):
-        from clients.models import Client
+        from clients.services import visible_clients
 
         framework = get_object_or_404(Framework, pk=pk)
         client = None
@@ -187,7 +187,7 @@ class FrameworkNavigatorExportView(LoginRequiredMixin, PermissionRequiredMixin, 
         client_id = parse_int_or_none(request.GET.get("client"))
         technology_id = parse_int_or_none(request.GET.get("technology"))
         if client_id:
-            client = Client.objects.filter(pk=client_id).first()
+            client = visible_clients(request.user).filter(pk=client_id).first()
         if technology_id:
             technology = Technology.objects.filter(pk=technology_id).first()
 
