@@ -38,8 +38,21 @@ PostgreSQL 16 (container "postgres")  → dados + cache (DatabaseCache)
 | Estáticos | WhiteNoise + Nginx | ver "Dívidas técnicas" sobre `STATICFILES_STORAGE` |
 | Front | Django Templates + Bootstrap 5.3.3 + Bootstrap Icons (CDN) | sem framework JS |
 | Gráficos | Chart.js 4.4.4 (CDN, só no dashboard) | |
-| Relatórios | ReportLab (PDF), openpyxl (Excel) | app `reports` |
+| Relatórios | ReportLab (PDF interno), WeasyPrint (PDF do cliente, HTML/CSS), openpyxl (Excel) | app `reports` - ver nota abaixo |
 | CSS próprio | `static/css/app.css` | variáveis `--scv-*`, tema claro/escuro |
+
+`reports/pdf.py` usa dois motores de PDF por razão deliberada: o relatório
+interno (`render_client_report_pdf`) é tabular e não precisava de redesign,
+então ficou em ReportLab; o relatório para o cliente
+(`render_client_facing_report_pdf`, o que carrega a identidade visual do
+produto) foi reescrito em HTML/CSS (template
+`reports/templates/reports/client_facing_report.html`) renderizado por
+WeasyPrint, para ter gráficos de verdade (donut de cobertura, barras de
+criticidade), gradiente e cartões - coisa que ReportLab não faz bem. Isso
+significa que a imagem Docker (`docker/django/Dockerfile`) precisa de
+bibliotecas nativas (`libpango`, `libcairo`) e de uma fonte instalada
+(`fonts-dejavu-core`, para os acentos do PT-BR) - sem isso o container nem
+sobe, porque `reports/pdf.py` importa `weasyprint` no topo do módulo.
 
 ## 3. Apps Django e responsabilidades
 
@@ -236,8 +249,16 @@ Nginx → Gunicorn → MIDDLEWARE (core/settings.py, em ordem):
   novo em um app já listado herda as permissões automaticamente na próxima
   execução de `setup_roles`. Um **app novo** precisa ser adicionado a uma
   dessas listas.
-- Não existe isolamento por cliente: quem tem `view_client` vê todos os
-  clientes (decisão de produto pendente — ver README raiz, seção Segurança).
+- **Isolamento por cliente** (`clients/services.py::visible_clients`):
+  ADMIN e SOC_MANAGER sempre veem todos os clientes; ANALYST e VIEWER só
+  veem os clientes listados em `Client.assigned_users` (campo editado no
+  próprio formulário de Cliente, por quem já tem visão total). Toda
+  queryset de dado client-scoped (Cliente, Regra, Gap, catálogo por
+  cliente, dashboard, busca global, relatório, auditoria) passa por essa
+  função ou pelo mixin `clients/mixins.py::ClientScopedQuerysetMixin` -
+  nunca filtra `Client.objects.all()`/`<Model>.objects.all()` direto numa
+  view. Ver `docs/05-operacao-e-testes.md §8` (era um achado do pentest
+  interno).
 
 ## 8. Auditoria (como funciona por baixo)
 

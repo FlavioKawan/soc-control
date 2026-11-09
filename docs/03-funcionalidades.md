@@ -56,6 +56,14 @@ aplica. Nomes de URL no formato `namespace:nome` (use com `{% url %}` /
   - `open_gaps_count`, `templates` (para "Aplicar template")
   - `audit_entries` (só se o usuário tiver `audit.view_auditlog`)
 - Botões de exportar relatório PDF/Excel (ver §9).
+- **Isolamento por cliente**: o formulário de Cliente tem um campo
+  "Analistas com acesso" (`assigned_users`), visível só para quem já vê
+  todos os clientes (ADMIN/SOC_MANAGER). Um ANALYST/VIEWER sem atribuição
+  não vê o cliente em lugar nenhum do sistema - lista, detalhe, dashboard,
+  busca, catálogo por cliente, relatório ou histórico retornam vazio/404
+  (ver `01-arquitetura.md §7`). Quem cria um cliente sendo ANALYST/VIEWER é
+  atribuído a ele automaticamente, senão perderia acesso ao que acabou de
+  criar.
 
 ## 4. Fontes de Log e Casos de Uso — `catalog`
 
@@ -187,8 +195,9 @@ Há duas versões, ambas no botão "Exportar relatório" da página do cliente:
 
 **Versão para o cliente** (pode ser enviada como está):
 
-- `reports/services.py::build_client_facing_report` → dict próprio; `reports/pdf.py::render_client_facing_report_pdf` renderiza.
-- Seções: resumo executivo → **camadas de ataque protegidas** → ações pendentes do cliente → cobertura por caso de uso → cobertura por framework → detecções ativas → itens em tratamento pelo SOC/terceiros.
+- `reports/services.py::build_client_facing_report` → dict próprio; `reports/pdf.py::render_client_facing_report_pdf` (template `reports/templates/reports/client_facing_report.html`, HTML/CSS via WeasyPrint - não ReportLab, ver `01-arquitetura.md §2`) renderiza com gráficos (donut de cobertura, barras de pendências por criticidade, barras de cobertura por framework, barras de detecções ativas por severidade) e badges reaproveitando as cores já cadastradas em Status/Severidade/Criticidade.
+- A primeira página é uma **capa/resumo de uma página** (`.cover` no template, com `break-after: page`): banner + um parágrafo narrativo gerado automaticamente a partir dos mesmos dados (`reports/pdf.py::_narrative`, pin de gramática singular/plural em `reports/tests.py::NarrativeTests`) + os cartões e gráficos acima. As seções detalhadas (tabelas por controle/regra/gap) começam na página seguinte.
+- Seções: resumo executivo (capa) → **camadas de ataque protegidas** → ações pendentes do cliente → cobertura por caso de uso → cobertura por framework (detalhado, por controle) → detecções ativas → itens em tratamento pelo SOC/terceiros.
 - **Nunca inclui** dados internos: ID interno/do vendor da regra, notas, analista dono do caso de uso, flags de inoperância/revisão, regras que não estão ativas.
 - Regras de negócio:
   - "Ações pendentes do cliente" = gaps abertos cujo Responsável tem `is_client=True` (marcado em Configurações › Responsáveis — nunca pelo nome) + fontes de log com status `NOT_RECEIVING`/`NOT_INTEGRATED`, com quantas detecções **ativas** dependem de cada uma.

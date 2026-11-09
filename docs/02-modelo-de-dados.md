@@ -32,6 +32,7 @@ erDiagram
     User ||--o| RuleColumnPreference : ""
     Client |o--o{ AuditLog : "client (SET_NULL)"
     User |o--o{ AuditLog : "user (SET_NULL)"
+    Client }o--o{ User : "assigned_users (M2M)"
 ```
 
 ## 2. Padrão "catálogo global × implementação por cliente"
@@ -118,9 +119,15 @@ Mudam só com deploy, porque a lógica depende deles.
 
 ### 3.3 `clients.Client`
 
-`name`, `legal_name`, `status` (PROTECT, escopo CLIENT), `notes`. Raiz de
-quase tudo: excluir um cliente **apaga em cascata** suas regras, gaps e
-vínculos de fonte/caso de uso.
+`name`, `legal_name`, `status` (PROTECT, escopo CLIENT), `notes`,
+`assigned_users` (M2M para User, opcional). Raiz de quase tudo: excluir um
+cliente **apaga em cascata** suas regras, gaps e vínculos de fonte/caso de
+uso.
+
+`assigned_users` é a base do isolamento por cliente
+(`clients/services.py::visible_clients` - ver `01-arquitetura.md §7`): só
+importa para ANALYST/VIEWER, que só veem os clientes listados ali. ADMIN e
+SOC_MANAGER ignoram esse campo e veem todos os clientes.
 
 ### 3.4 `catalog`
 

@@ -242,9 +242,19 @@ Exemplo: "regra sem caso de uso vinculado".
    Reaproveite funções de services existentes, sem recalcular.
 2. `reports/excel.py`: nova coluna em `_write_*_sheet` (ajuste `_header_row`
    e `_set_widths`) ou uma nova aba `_write_<x>_sheet`.
-3. `reports/pdf.py`: só se o dado couber na página A4. Texto digitado
-   pelo usuário deve passar por `_cell()` (quebra linha e escapa `<`/`&`,
-   que o ReportLab interpretaria como marcação).
+3. `reports/pdf.py`, só se o dado couber na página A4:
+   - Relatório **interno** (`render_client_report_pdf`, ReportLab): texto
+     digitado pelo usuário deve passar por `_cell()` (quebra linha e escapa
+     `<`/`&`, que o ReportLab interpretaria como marcação).
+   - Relatório **para o cliente** (`render_client_facing_report_pdf`,
+     HTML/CSS via WeasyPrint): edite o template
+     `reports/templates/reports/client_facing_report.html` com `{% %}`/
+     `{{ }}` normais do Django (autoescape já protege contra HTML digitado
+     pelo usuário). Cor de badge reaproveita o padrão já usado no resto do
+     app: `style="background-color: {{ x.color|default:'#6c757d' }};"`. Só
+     mexa em `_client_facing_context()` se o template precisar de algo que
+     ele não consegue calcular sozinho (ex. geometria do gráfico donut,
+     cor por faixa de valor) - o resto vem direto do dict do service.
 4. Teste em `reports/tests.py`: o arquivo é gerado (status 200 e
    content-type) e o service contém o dado.
 

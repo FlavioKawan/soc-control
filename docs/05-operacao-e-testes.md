@@ -105,14 +105,14 @@ criar bancos, e o usuário padrão da imagem oficial tem.
 |---|---|
 | `accounts` | limite de tentativas de login (por IP, reset no sucesso); CRUD de usuários da plataforma, grupos só para ADMIN, redefinição de senha, travas contra autoexclusão/autodesativação |
 | `taxonomy` | auto-slug, semântica de Status, escopo de Category, permissões dos catálogos, layer do Navigator, agrupamento de camadas (`framework_layers`/descendentes) |
-| `clients` | escopo de status no form, permissões por grupo, busca |
-| `catalog` | vínculos por cliente, cálculo de cobertura, templates (idempotência), permissões |
-| `detections` | form, revisão vencida, inoperância, inconsistência de cobertura, CSV, colunas, filtros, parâmetros malformados, open redirect, filtro por camada (`?stage=`) incluindo descendentes |
-| `gaps` | model, escopo do form por cliente, permissões, filtros, vínculos opcionais (SET_NULL), catálogo de Responsáveis |
-| `audit` | create/update/delete, M2M, usuário da requisição, exclusão em cascata de cliente, permissão |
-| `dashboard` | parâmetros malformados, widgets de camada (Kill Chain/MITRE ATT&CK), maturidade combinada, ranking de clientes |
-| `search` | resultados e filtro por permissão |
-| `reports` | services interno e para o cliente (ações do cliente, cobertura por framework, camadas de ataque protegidas, só regras ativas), download PDF/Excel, permissões |
+| `clients` | escopo de status no form, permissões por grupo, busca, isolamento por cliente (`visible_clients`, auto-atribuição ao criar) |
+| `catalog` | vínculos por cliente, cálculo de cobertura, templates (idempotência), permissões, isolamento por cliente nas telas `client_pk` |
+| `detections` | form, revisão vencida, inoperância, inconsistência de cobertura, CSV, colunas, filtros, parâmetros malformados, open redirect, filtro por camada (`?stage=`) incluindo descendentes, isolamento por cliente (lista/detalhe/form/CSV, inclusive contra "roubo" de regra de outro cliente) |
+| `gaps` | model, escopo do form por cliente, permissões, filtros, vínculos opcionais (SET_NULL), catálogo de Responsáveis, isolamento por cliente |
+| `audit` | create/update/delete, M2M, usuário da requisição, exclusão em cascata de cliente, permissão, isolamento por cliente (mantendo visíveis os registros sem cliente) |
+| `dashboard` | parâmetros malformados, widgets de camada (Kill Chain/MITRE ATT&CK), maturidade combinada, ranking de clientes, isolamento por cliente nos agregados e no ranking |
+| `search` | resultados e filtro por permissão, isolamento por cliente nos resultados de Cliente/Regra/Gap |
+| `reports` | services interno e para o cliente (ações do cliente, cobertura por framework, camadas de ataque protegidas, só regras ativas), download PDF/Excel, permissões, parágrafo narrativo automático (`NarrativeTests`, concordância singular/plural) e gráficos de barra do PDF do cliente (`ChartHelperTests`) |
 | `notifications` | regras vencidas, gaps parados, montagem do digest, comando de envio |
 
 ## 5. Digest por e-mail (agendamento)
@@ -154,6 +154,9 @@ e rodar `python manage.py check --deploy`.
 | Histórico com usuário vazio | alteração feita fora de requisição (shell, comando agendado) | esperado |
 | Widget de camadas (Kill Chain/MITRE) sumiu do dashboard | framework renomeado (é buscado pelo nome exato "Cyber Kill Chain"/"MITRE ATT&CK") | renomear de volta ou rodar `seed_kill_chain`/`seed_mitre_attack` |
 | Mudança em `.py` não surtiu efeito | Gunicorn não recarrega sozinho | `docker compose restart web` |
+| Cliente "desaparece" (404 ou some da lista) para um ANALYST/VIEWER | não está em `Client.assigned_users` - ADMIN/SOC_MANAGER não são afetados | editar o Cliente e adicionar o usuário em "Analistas com acesso" |
+| Container `web` não sobe / `ImportError` mencionando `weasyprint`, `pango` ou `cairo` | `docker/django/Dockerfile` sem as libs nativas do WeasyPrint (usado pelo relatório para o cliente, `reports/pdf.py`) | conferir que o Dockerfile instala `libpango-1.0-0 libpangocairo-1.0-0 libcairo2`; rebuild (`docker compose build web`) |
+| Relatório para o cliente em PDF com texto sem acento (caixas/quadrados no lugar de á, ã, ç) | falta `fonts-dejavu-core` na imagem (`python:3.13-slim` não vem com fonte nenhuma) | instalar o pacote no Dockerfile e rebuild |
 
 ## 8. Segurança — pentest interno
 
@@ -168,6 +171,7 @@ combinando leitura de código e ataques reais via HTTP. Achados e correções:
 | 4 | **Importação de CSV sem limite de linhas** (CWE-400): cada linha faz várias consultas individuais; um arquivo gigante travaria um worker do Gunicorn por minutos — com 2-3 uploads simultâneos, a aplicação fica fora do ar para todo mundo. | Média | `MAX_CSV_ROWS = 5000` em `detections/services.py` — interrompe e avisa em vez de processar sem limite. |
 | 5 | Nginx expunha a versão (`Server: nginx/1.27.5`) — reconhecimento facilitado para um atacante escolher exploits conhecidos. | Baixa | `server_tokens off;` no `nginx.conf`. |
 | 6 | `CSRF_COOKIE_HTTPONLY=False` sem necessidade — nenhum JS do sistema lê esse cookie. | Baixa | `CSRF_COOKIE_HTTPONLY = True`. |
+| 7 | **Sem isolamento entre clientes na camada de aplicação**: qualquer usuário com a permissão `view_client` via **todos** os clientes — um ANALYST/VIEWER comprometido ou mal configurado enxergava regras, gaps e relatórios de clientes que não eram dele (lista, detalhe, dashboard, busca global, catálogo por cliente, importação CSV e histórico de auditoria). | Alta | `clients/services.py::visible_clients` + `clients/mixins.py::ClientScopedQuerysetMixin` — ADMIN/SOC_MANAGER continuam vendo tudo; ANALYST/VIEWER só veem o que estiver em `Client.assigned_users` (campo gerenciado no formulário de Cliente). Decisão de produto: ver `01-arquitetura.md §7`. |
 
 **Testados e confirmados seguros** (sem necessidade de correção): SQL
 injection via campos de busca (ORM parametriza tudo), XSS armazenado
@@ -176,22 +180,11 @@ protegidas sem login (sempre 302 para o login), header `Host` forjado
 (sempre 400, `ALLOWED_HOSTS` funcionando), CSRF (middleware nativo do
 Django, cookie agora `HttpOnly`).
 
-**Registrado, não corrigido ainda** — exige uma decisão de produto antes
-de implementar: a spec original pede "isolamento entre clientes na
-camada de aplicação". Hoje qualquer usuário autenticado com a permissão
-`view_client` vê **todos** os clientes — não há um vínculo
-usuário↔cliente que restrinja um analista a só ver os clientes dele. O
-que já existe é o isolamento "defensivo" dentro dos formulários (ex:
-`GapForm` só oferece casos de uso/fontes/regras do cliente selecionado,
-para não misturar dados por engano) — isso evita erro, não impede acesso.
-Se o requisito for "cada analista só vê os clientes atribuídos a ele", é
-uma feature nova (precisa de um modelo de atribuição usuário↔cliente e um
-filtro em toda queryset) — vale conversar antes de implementar algo que
-pode não ser o que você imaginou.
-
 Todos os achados corrigidos têm teste de regressão automatizado
 (`accounts/tests.py::LoginThrottleTests`,
 `detections/tests.py::MalformedQueryParamTests`,
 `detections/tests.py::OpenRedirectTests`,
 `detections/tests.py::CsvImportTests::test_oversized_file_is_capped...`,
-`dashboard/tests.py::MalformedFilterParamTests`).
+`dashboard/tests.py::MalformedFilterParamTests`). O isolamento por cliente
+(achado #7) tem `ClientIsolationTests` em `clients`, `detections`, `gaps`,
+`catalog`, `search`, `audit` e `dashboard`.
